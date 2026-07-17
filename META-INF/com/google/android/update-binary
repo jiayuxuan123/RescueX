@@ -1,0 +1,45 @@
+#!/sbin/sh
+
+umask 022
+
+ui_print() { echo "$1"; }
+
+require_new_magisk() {
+  ui_print "*******************************"
+  ui_print " Please install Magisk v20.4+! "
+  ui_print "*******************************"
+  exit 1
+}
+
+require_data_mount() {
+  ui_print "*******************************************"
+  ui_print " Failed to mount /data. Cannot continue.   "
+  ui_print " Please reboot to recovery and try again,  "
+  ui_print " or check your /data partition for errors. "
+  ui_print "*******************************************"
+  exit 1
+}
+
+OUTFD=$2
+ZIPFILE=$3
+
+MOUNT_ERR="$(mount /data 2>&1)"
+if [ $? -eq 0 ]; then
+  MOUNT_ERR=""
+fi
+
+# mount 失败且 /data 实际不可用时，给出明确的挂载失败提示，
+# 而不是静默忽略并误导性地提示"需要 Magisk v20.4+"
+if [ ! -d /data/adb ]; then
+  if [ -n "$MOUNT_ERR" ]; then
+    ui_print "mount /data error: $MOUNT_ERR"
+  fi
+  require_data_mount
+fi
+
+[ -f /data/adb/magisk/util_functions.sh ] || require_new_magisk
+. /data/adb/magisk/util_functions.sh
+[ $MAGISK_VER_CODE -lt 20400 ] && require_new_magisk
+
+install_module
+exit 0
