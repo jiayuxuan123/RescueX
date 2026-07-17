@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#006c4c">
+    <title>RescueX 自动救砖</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="loading-bar" id="loading-bar"></div>
+
+    <div class="container">
+
+        <!-- 顶部应用栏 -->
+        <div class="appbar">
+            <div class="brand">
+                <div class="logo-icon">R</div>
+                <div class="brand-text">
+                    <div class="title">RescueX</div>
+                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.0.1</div>
+                </div>
+            </div>
+            <div class="appbar-actions">
+                <button class="icon-btn" id="btn-help" title="帮助" aria-label="帮助">?</button>
+                <div class="lang-switch">
+                    <button class="lang-btn active" data-lang="zh">中文</button>
+                    <button class="lang-btn" data-lang="en">EN</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 状态总览 -->
+        <div class="status-hero">
+            <div class="status-label" data-i18n="current_status">当前状态</div>
+            <div class="status-value" id="hero-status">加载中...</div>
+            <div class="status-meta" id="hero-meta">--</div>
+        </div>
+
+        <!-- 启动状态 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">●</span> <span data-i18n="boot_status">启动状态</span></h2>
+                <span id="status-badge" class="badge badge-info">加载中</span>
+            </div>
+            <div class="card-body">
+                <div class="info-grid">
+                    <div class="info-tile">
+                        <div class="label" data-i18n="last_result">上次启动结果</div>
+                        <div class="value" id="info-last-result">--</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="fail_count">连续失败次数</div>
+                        <div class="value" id="info-fail-count">0</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="boot_duration">上次启动耗时</div>
+                        <div class="value" id="info-boot-duration">--</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="ota_mode">OTA 模式</div>
+                        <div class="value" id="info-ota">否</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="patch_detected">检测到补丁更新</div>
+                        <div class="value" id="info-patch">否</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="patch_fail_count">补丁失败次数</div>
+                        <div class="value" id="info-patch-fail">0</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="watchdog">看门狗</div>
+                        <div class="value" id="info-watchdog">未运行</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="rescue_count">救砖次数</div>
+                        <div class="value" id="info-rescue-count">0</div>
+                    </div>
+                </div>
+
+                <div class="mt-16">
+                    <div class="text-sm text-dim" style="display:flex;justify-content:space-between;">
+                        <span data-i18n="fail_progress">失败进度</span>
+                        <span id="progress-text">0 / 3</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- v2.5: 启动统计面板 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">▣</span> <span data-i18n="stats_panel">启动统计</span></h2>
+                <button class="btn btn-text btn-sm" data-action="refreshStats" data-i18n="refresh">刷新</button>
+            </div>
+            <div class="card-body">
+                <div class="stats-grid">
+                    <div class="stat-block">
+                        <div class="stat-value ok" id="stat-success-rate">--%</div>
+                        <div class="stat-label" data-i18n="success_rate">启动成功率</div>
+                    </div>
+                    <div class="stat-block">
+                        <div class="stat-value" id="stat-avg-duration">--s</div>
+                        <div class="stat-label" data-i18n="avg_boot_time">平均启动耗时</div>
+                    </div>
+                    <div class="stat-block">
+                        <div class="stat-value" id="stat-total">0</div>
+                        <div class="stat-label" data-i18n="total_boots">总启动次数</div>
+                    </div>
+                    <div class="stat-block">
+                        <div class="stat-value warn" id="stat-rescued">0</div>
+                        <div class="stat-label" data-i18n="rescue_times">救砖次数</div>
+                    </div>
+                </div>
+                <div class="stats-detail mt-16">
+                    <div class="stat-row"><span data-i18n="success_count">成功启动</span><span id="stat-success">0</span></div>
+                    <div class="stat-row"><span data-i18n="failed_count">失败启动</span><span id="stat-failed">0</span></div>
+                    <div class="stat-row"><span data-i18n="last_success">最近成功</span><span id="stat-last-success">--</span></div>
+                    <div class="stat-row"><span data-i18n="last_rescue">最近救砖</span><span id="stat-last-rescue">--</span></div>
+                </div>
+                <!-- v2.7.0: 启动耗时趋势 -->
+                <div class="stats-detail mt-16">
+                    <span class="stat-label" data-i18n="boot_trend">启动耗时趋势</span>
+                    <div id="boot-trend" class="boot-trend-chart">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 配置 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">⚙</span> <span data-i18n="config">救砖参数</span></h2>
+                <label class="switch">
+                    <input type="checkbox" id="cfg-enabled" data-action="toggleEnabled">
+                    <span class="switch-track"></span>
+                </label>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label for="cfg-threshold">
+                        <span data-i18n="reboot_threshold">连续重启阈值</span>
+                        <span class="hint-inline">1-10</span>
+                    </label>
+                    <div class="input-row">
+                        <input type="number" id="cfg-threshold" min="1" max="10" value="3">
+                        <span class="hint" data-i18n="threshold_hint">达到此次数后触发全量救砖</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="cfg-timeout">
+                        <span data-i18n="boot_timeout">开机超时</span>
+                        <span class="hint-inline">30-600 秒</span>
+                    </label>
+                    <div class="input-row">
+                        <input type="number" id="cfg-timeout" min="30" max="600" value="90">
+                        <span class="hint" data-i18n="timeout_hint">超时未完成开机则判定失败</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="cfg-ota-timeout">
+                        <span data-i18n="ota_timeout">OTA 升级超时</span>
+                        <span class="hint-inline">60-1800 秒</span>
+                    </label>
+                    <div class="input-row">
+                        <input type="number" id="cfg-ota-timeout" min="60" max="1800" value="900">
+                        <span class="hint" data-i18n="ota_hint">检测到 OTA 时使用此超时</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="cfg-grace">
+                        <span data-i18n="grace_period">用户重启宽限期</span>
+                        <span class="hint-inline">5-300 秒</span>
+                    </label>
+                    <div class="input-row">
+                        <input type="number" id="cfg-grace" min="5" max="300" value="30">
+                        <span class="hint" data-i18n="grace_hint">短时间内重启不计入失败</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="cfg-patch-timeout">
+                        <span data-i18n="patch_timeout">补丁更新超时</span>
+                        <span class="hint-inline">60-600 秒</span>
+                    </label>
+                    <div class="input-row">
+                        <input type="number" id="cfg-patch-timeout" min="60" max="600" value="180">
+                        <span class="hint" data-i18n="patch_timeout_hint">补丁更新时使用此超时（默认 180 秒）</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="cfg-patch-fail-threshold">
+                        <span data-i18n="patch_fail_threshold">补丁失败阈值</span>
+                        <span class="hint-inline">1-5 次</span>
+                    </label>
+                    <div class="input-row">
+                        <input type="number" id="cfg-patch-fail-threshold" min="1" max="5" value="2">
+                        <span class="hint" data-i18n="patch_fail_threshold_hint">达到此次数后回滚补丁（不清整机）</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="cfg-watchdog-poll">
+                        <span data-i18n="watchdog_poll">看门狗轮询间隔</span>
+                        <span class="hint-inline">1-10 秒</span>
+                    </label>
+                    <div class="input-row">
+                        <input type="number" id="cfg-watchdog-poll" min="1" max="10" value="2">
+                        <span class="hint" data-i18n="watchdog_poll_hint">长超时场景会自动放大</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label data-i18n="advanced">高级选项</label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-log" checked>
+                        <span data-i18n="opt_log">记录详细启动日志</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-progressive" checked>
+                        <span data-i18n="opt_progressive">渐进式救砖（先禁用最近安装的模块）</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-auto-reenable">
+                        <span data-i18n="opt_autoreenable">救砖后自动恢复模块（实验性）</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-dry-run">
+                        <span data-i18n="opt_dryrun">DRY_RUN 模式（仅记录日志不真禁用）</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-patch-auto-rollback" checked>
+                        <span data-i18n="opt_patch_auto_rollback">补丁失败自动回滚（保留用户数据）</span>
+                    </label>
+                </div>
+
+                <button class="btn btn-filled" data-action="saveConfig" data-i18n="save_config">保存配置</button>
+
+                <div class="section-actions">
+                    <button class="btn btn-tonal" data-action="exportConfig" data-i18n="export_config">导出配置</button>
+                    <button class="btn btn-tonal" data-action="importConfig" data-i18n="import_config">导入配置</button>
+                    <button class="btn btn-tonal" data-action="exportFullState" data-i18n="export_full">导出完整状态</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- v2.7.1: 自定义目录权限 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">&#9881;</span> <span data-i18n="custom_dirs_title">自定义目录权限</span></h2>
+            </div>
+            <div class="card-body">
+                <p class="desc-text" data-i18n="custom_dirs_desc">模块启动时自动对指定目录设置权限。默认仅对模块自身持久目录 /data/adb/rescuex_data 授予 770。</p>
+                <div id="custom-dirs-list">
+                    <div class="empty-state" data-i18n="no_custom_dirs">未设置自定义目录</div>
+                </div>
+                <div class="section-actions">
+                    <button class="btn btn-tonal" data-action="addCustomDir" data-i18n="add_custom_dir">添加目录</button>
+                    <button class="btn btn-filled" data-action="saveCustomDirs" data-i18n="save_custom_dirs">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- v3.0.1: 嫌疑模块追踪面板 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">🔍</span> <span data-i18n="suspect_panel">嫌疑模块追踪</span></h2>
+                <span id="rescue-level-badge" class="badge badge-info">--</span>
+            </div>
+            <div class="card-body">
+                <p class="desc-text" data-i18n="suspect_panel_desc">启动成功后自动记录已知良好模块列表。下次启动失败时对比差异，精准定位新增/新启用的模块。</p>
+                <div class="info-grid" style="margin-bottom:12px;">
+                    <div class="info-tile">
+                        <div class="label" data-i18n="good_modules_count">已知良好模块数</div>
+                        <div class="value" id="info-good-modules">--</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="suspect_count">最近检测嫌疑数</div>
+                        <div class="value" id="info-suspect-count">0</div>
+                    </div>
+                </div>
+                <div class="module-list" id="suspect-list">
+                    <div class="empty-state" data-i18n="loading">加载中...</div>
+                </div>
+                <div class="section-actions">
+                    <button class="btn btn-tonal" data-action="saveGoodModules" data-i18n="save_good_modules_now">立即保存当前列表</button>
+                    <button class="btn btn-tonal" data-action="clearSuspectLog" data-i18n="clear_suspect_log">清除嫌疑日志</button>
+                    <button class="btn btn-tonal" data-action="resetRescueLevel" data-i18n="reset_rescue_level">重置救砖级别</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 白名单模块选择器 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">★</span> <span data-i18n="whitelist">白名单模块</span></h2>
+            </div>
+            <div class="card-body">
+                <p class="desc-text" data-i18n="whitelist_desc">救砖时不会被禁用的模块。勾选要保留的模块，保存即可。</p>
+                <div class="module-list" id="module-list">
+                    <div class="empty-state" data-i18n="loading">加载中...</div>
+                </div>
+                <div class="section-actions">
+                    <button class="btn btn-tonal" data-action="refreshModules" data-i18n="refresh_modules">刷新模块列表</button>
+                    <button class="btn btn-filled" data-action="saveWhitelist" data-i18n="save_whitelist">保存白名单</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 模块状态 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">⊞</span> <span data-i18n="module_status">模块状态</span></h2>
+            </div>
+            <div class="card-body">
+                <p class="desc-text" data-i18n="module_status_desc">当前被禁用的模块列表（含非 RescueX 禁用的）。</p>
+                <div class="module-list" id="disabled-list">
+                    <div class="empty-state" data-i18n="loading">加载中...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 快照管理 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">⏱</span> <span data-i18n="snapshots">快照管理</span></h2>
+            </div>
+            <div class="card-body">
+                <p class="desc-text" data-i18n="snapshot_desc">记录当前所有模块的启用/禁用状态，出问题可一键回滚。</p>
+                <div class="section-actions">
+                    <button class="btn btn-filled" data-action="takeSnapshot" data-i18n="take_snapshot">拍快照</button>
+                </div>
+                <div class="module-list mt-16" id="snapshot-list">
+                    <div class="empty-state" data-i18n="no_snapshots">暂无快照</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- v2.7.0: 救砖审计 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">📋</span> <span data-i18n="audit_log">救砖审计</span></h2>
+                <button class="btn btn-text btn-sm" data-action="refreshAuditLog" data-i18n="refresh">刷新</button>
+            </div>
+            <div class="card-body">
+                <p class="desc-text" data-i18n="audit_log_desc">记录所有救砖操作的详细信息（操作类型、时间、影响的模块）。</p>
+                <pre id="audit-log-content" class="log-view" data-i18n="loading">加载中...</pre>
+                <div class="log-actions">
+                    <button class="btn btn-text btn-sm" data-action="refreshAuditLog" data-i18n="refresh">刷新</button>
+                    <button class="btn btn-text btn-sm" data-action="copyAuditLog" data-i18n="copy">复制</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 手动操作 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">!</span> <span data-i18n="actions">手动操作</span></h2>
+            </div>
+            <div class="card-body">
+                <div class="button-group">
+                    <button class="btn btn-danger" data-action="disableAllModules" data-i18n="disable_all">禁用所有模块</button>
+                    <button class="btn btn-tonal" data-action="reenableAllModules" data-i18n="enable_all">恢复所有模块</button>
+                </div>
+                <div class="button-group mt-8">
+                    <button class="btn btn-danger" data-action="unfreezeApps" data-i18n="unfreeze_apps">APP 解冻</button>
+                    <button class="btn btn-tonal" data-action="lockScriptDirs" data-i18n="lock_script_dirs">锁定脚本目录</button>
+                </div>
+                <div class="button-group mt-8">
+                    <button class="btn btn-outlined" data-action="testWatchdog" data-i18n="test_watchdog">测试看门狗</button>
+                    <button class="btn btn-outlined" data-action="rebootDevice" data-i18n="reboot">重启设备</button>
+                </div>
+                <div class="section-actions">
+                    <button class="btn btn-outlined" data-action="togglePatchFlag" data-i18n="toggle_patch_flag">设置/清除补丁标记</button>
+                    <button class="btn btn-outlined" data-action="generateReport" data-i18n="generate_report">生成诊断报告</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">≡</span> <span data-i18n="logs">日志与历史</span></h2>
+                <div class="tabs">
+                    <button class="tab active" data-tab="log" data-i18n="log">日志</button>
+                    <button class="tab" data-tab="history" data-i18n="history">历史</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <pre id="rescue-log" class="log-view" data-i18n="loading">加载中...</pre>
+                <pre id="boot-history" class="log-view hidden" data-i18n="loading">加载中...</pre>
+                <div class="log-actions">
+                    <button class="btn btn-text btn-sm" data-action="refreshLog" data-i18n="refresh">刷新</button>
+                    <button class="btn btn-text btn-sm" data-action="copyLog" data-i18n="copy">复制</button>
+                    <button class="btn btn-text btn-sm" data-action="exportLog" data-i18n="export">导出</button>
+                    <button class="btn btn-text btn-sm" data-action="clearLog" id="btn-clear-log" data-i18n="clear">清空</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 关于 -->
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">i</span> <span data-i18n="about">关于</span></h2>
+            </div>
+            <div class="card-body">
+                <div class="info-grid">
+                    <div class="info-tile">
+                        <div class="label" data-i18n="version">版本</div>
+                        <div class="value text-mono">v3.0.1</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="manager">管理器</div>
+                        <div class="value" id="info-manager">--</div>
+                    </div>
+                </div>
+                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.0.1 新增嫌疑模块精准追踪、三级渐进式救砖、脚本目录禁用、APP 自动解冻等专业功能。</p>
+                <div class="section-actions">
+                    <button class="btn btn-text btn-sm" data-action="showFeatures" data-i18n="feature_intro">功能介绍</button>
+                    <button class="btn btn-text btn-sm" data-action="showPrivacy" data-i18n="privacy_policy">隐私协议</button>
+                    <button class="btn btn-text btn-sm" data-action="showUsage" data-i18n="usage_notice">使用须知</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
