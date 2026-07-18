@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.6-alpha - common.sh
+# RescueX v3.2.7-alpha - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.2.6-alpha"
-RX_VERSION_CODE=326
+RX_VERSION="v3.2.7-alpha"
+RX_VERSION_CODE=327
 
 # ============================================================
 # 路径初始化
@@ -2455,7 +2455,7 @@ EOF
         if kill -0 "$wd_pid" 2>/dev/null; then
             wd_cmd=$(cat "/proc/$wd_pid/cmdline" 2>/dev/null | tr '\0' ' ')
             case "$wd_cmd" in
-                *watchdog*|*rescue*) wd_status="alive_ours" ;;
+                *"${MODDIR}/watchdog.sh"*|*watchdog.sh*|*"${MODDIR}/watchdog"*) wd_status="alive_ours" ;;
                 *) wd_status="alive_other" ;;
             esac
         else

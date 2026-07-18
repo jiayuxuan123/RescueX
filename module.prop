@@ -1,7 +1,7 @@
 id=RescueX
 name=RescueX 自动救砖
-version=v3.2.6-alpha
-versionCode=32601
+version=v3.2.7-alpha
+versionCode=32701
 author=jiayuxuan123
-description=[守护中] 自动救砖守护运行中 | 重启阈值3次/开机超时90秒/OTA 15分钟/三级救砖/嫌疑追踪/脚本禁用/APP解冻/高风险脚本拦截 | v3.2.6-alpha 修正版
+description=[守护中] 自动救砖守护运行中 | 重启阈值3次/开机超时90秒/OTA 15分钟/三级救砖/嫌疑追踪/脚本禁用/APP解冻/高风险脚本拦截 | v3.2.7-alpha 修正版
 updateJson=https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json

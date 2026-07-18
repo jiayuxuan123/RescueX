@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.6-alpha - service.sh
+# RescueX v3.2.7-alpha - service.sh
 # 系统完全启动后执行，标记启动成功
 #
 # v3.0.1 改进：
@@ -93,7 +93,7 @@ update_module_prop() {
     suspect_info=""
     if [ -f "$SUSPECT_LOG" ]; then
         local suspects
-        suspects=$(grep -v '^?' "$SUSPECT_LOG" 2>/dev/null | grep -v '^#' | grep -v '^unknown$' | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
+        suspects=$(grep -v '^?' "$SUSPECT_LOG" 2>/dev/null | grep -v '^+' | grep -v '^#' | grep -v '^unknown$' | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
         if [ -n "$suspects" ]; then
             suspect_info=" 嫌疑:${suspects}"
         fi
