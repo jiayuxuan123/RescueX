@@ -868,6 +868,25 @@ input[type="checkbox"]:not(.toggle-input) {
     line-height: 1.6;
 }
 
+.notice-block {
+    background: var(--md-surface-container-low);
+    border-radius: var(--r-md);
+    padding: 16px;
+}
+
+.notice-kicker {
+    font-size: 11px;
+    color: var(--md-primary);
+    margin-bottom: 6px;
+}
+
+.notice-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--md-on-surface);
+    margin-bottom: 8px;
+}
+
 /* === v2.5: 顶部图标按钮 === */
 .appbar-actions {
     display: flex;

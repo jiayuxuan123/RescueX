@@ -106,7 +106,13 @@ const I18N = {
         about: '关于',
         version: '版本',
         manager: '管理器',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.1 继续整合快照、稳定基线、决策报告与高风险脚本拦截。',
+        source_code: '源码',
+        update_notice: '更新公告',
+        update_notice_title: '自动快照去重与在线更新接入',
+        update_notice_desc: '同一轮启动只保留一次自动快照，WebUI 已加入 GitHub 开源入口，模块元数据已接入 GitHub Release 在线更新。',
+        open_source_repo: '开源仓库',
+        view_releases: '版本发布',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.2 继续整合快照、稳定基线、决策报告、高风险脚本拦截与 GitHub 在线更新。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -388,7 +394,13 @@ const I18N = {
         about: 'About',
         version: 'Version',
         manager: 'Manager',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.1 continues the snapshot, baseline restore, decision report, and high-risk script interception pass.',
+        source_code: 'Source',
+        update_notice: 'Update Notice',
+        update_notice_title: 'Auto snapshot dedupe and online updates',
+        update_notice_desc: 'Each boot session now keeps a single automatic snapshot. The WebUI includes GitHub entry points, and module metadata now supports GitHub Release-based online updates.',
+        open_source_repo: 'Open Repository',
+        view_releases: 'View Releases',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.2 continues the snapshot, baseline restore, decision report, high-risk script interception, and GitHub-based online update pass.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -804,7 +816,30 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.1' : 'Automatic Boot Rescue v3.2.1';
+        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.2' : 'Automatic Boot Rescue v3.2.2';
+    }
+
+    openExternal(url) {
+        if (!url) return;
+        try {
+            if (typeof window.open === 'function') {
+                const win = window.open(url, '_blank');
+                if (win) return;
+            }
+        } catch (_) {}
+        try {
+            window.location.href = url;
+        } catch (_) {
+            this.copyText(url);
+        }
+    }
+
+    openRepository() {
+        this.openExternal('https://github.com/jiayuxuan123/RescueX');
+    }
+
+    openReleases() {
+        this.openExternal('https://github.com/jiayuxuan123/RescueX/releases');
     }
 
     setupEasterEggs() {

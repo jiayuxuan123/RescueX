@@ -19,7 +19,12 @@ Android 自动救砖模块，兼容 Magisk / KernelSU / APatch。
 
 ## 安装
 
-在 Magisk / KernelSU / APatch 管理器中刷入 [Releases](https://github.com/kirklin/RescueX/releases) 页面下载的 zip 包并重启即可。
+在 Magisk / KernelSU / APatch 管理器中刷入 [Releases](https://github.com/jiayuxuan123/RescueX/releases) 页面下载的 zip 包并重启即可。
+
+## 开源仓库
+
+- 仓库地址：https://github.com/jiayuxuan123/RescueX
+- 在线更新：模块已内置 `updateJson`，发布新版 Release 后可直接从管理器检查更新
 
 ### 兼容性
 
