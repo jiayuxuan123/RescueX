@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.0 - common.sh
+# RescueX v3.2.1 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.2.0"
-RX_VERSION_CODE=320
+RX_VERSION="v3.2.1"
+RX_VERSION_CODE=321
 
 # ============================================================
 # 路径初始化
@@ -46,6 +46,8 @@ _rescuex_init_paths() {
     WATCHDOG_SCRIPT="$MODDIR/watchdog.sh"
     SNAPSHOT_DIR="$STATE_DIR/snapshots"
     AUTO_SNAPSHOT_FILE="$SNAPSHOT_DIR/auto-snap-latest.txt"
+    AUTO_SNAPSHOT_SESSION_FILE="$STATE_DIR/auto_snapshot_session"
+    MAX_MANUAL_SNAPSHOTS=12
     SCRIPT_RISK_ALERT_FILE="$STATE_DIR/script_risk_alert.conf"
     SCRIPT_RISK_QUARANTINE_DIR="$STATE_DIR/script_risk_quarantine"
 
@@ -156,7 +158,7 @@ log() {
 # 同步关键持久数据到外部目录（模块更新时不会丢失）
 sync_to_persist() {
     mkdir -p "$PERSIST_DIR" 2>/dev/null
-    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level; do
+    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session; do
         [ -f "$STATE_DIR/$f" ] && cp "$STATE_DIR/$f" "$PERSIST_DIR/$f" 2>/dev/null
     done
     # 快照目录
@@ -165,6 +167,7 @@ sync_to_persist() {
         for snap in "$SNAPSHOT_DIR"/snap-*.txt "$SNAPSHOT_DIR"/auto-snap-*.txt; do
             [ -f "$snap" ] && cp "$snap" "$PERSIST_DIR/snapshots/" 2>/dev/null
         done
+        prune_manual_snapshots_in_dir "$PERSIST_DIR/snapshots"
     fi
     chmod 0700 "$PERSIST_DIR" 2>/dev/null
 }
@@ -173,7 +176,7 @@ sync_to_persist() {
 restore_from_persist() {
     [ ! -d "$PERSIST_DIR" ] && return 1
     local restored=0
-    for f in config.conf whitelist.conf boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level; do
+    for f in config.conf whitelist.conf boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session; do
         if [ -f "$PERSIST_DIR/$f" ] && [ ! -f "$STATE_DIR/$f" ]; then
             cp "$PERSIST_DIR/$f" "$STATE_DIR/$f" 2>/dev/null && restored=$((restored + 1))
         fi
@@ -186,6 +189,7 @@ restore_from_persist() {
             snap_name=$(basename "$snap")
             [ ! -f "$SNAPSHOT_DIR/$snap_name" ] && cp "$snap" "$SNAPSHOT_DIR/" 2>/dev/null && restored=$((restored + 1))
         done
+        prune_manual_snapshots_in_dir "$SNAPSHOT_DIR"
     fi
     # boot_status 特殊处理：合并累计字段
     if [ -f "$PERSIST_DIR/boot_status" ]; then
@@ -833,6 +837,78 @@ manual_take_snapshot() {
         *) log_rescue_action "SNAPSHOT_SAVE" "$(basename "$snap")" ;;
     esac
     printf '%s\n' "$snap"
+    return 0
+}
+
+get_manual_snapshot_limit() {
+    local limit="${MAX_MANUAL_SNAPSHOTS:-12}"
+    case "$limit" in ''|*[!0-9]*) limit=12 ;; esac
+    [ "$limit" -lt 1 ] 2>/dev/null && limit=1
+    echo "$limit"
+}
+
+prune_manual_snapshots_in_dir() {
+    local dir="$1"
+    local limit count snap
+    [ -d "$dir" ] || return 0
+    limit=$(get_manual_snapshot_limit)
+    count=0
+    for snap in $(ls -1 "$dir"/snap-*.txt 2>/dev/null | sort -r); do
+        [ -f "$snap" ] || continue
+        count=$((count + 1))
+        if [ "$count" -gt "$limit" ]; then
+            rm -f "$snap" 2>/dev/null
+        fi
+    done
+    return 0
+}
+
+get_auto_snapshot_session_key() {
+    local boot_start=0 uptime_start=0 last_result=""
+    local k v
+    if [ -f "$STATUS_FILE" ]; then
+        while IFS='=' read -r k v || [ -n "$k$v" ]; do
+            [ -z "$k" ] && continue
+            case "$k" in
+                BOOT_START) boot_start="$v" ;;
+                UPTIME_START) uptime_start="$v" ;;
+                LAST_BOOT_RESULT) last_result="$v" ;;
+            esac
+        done < "$STATUS_FILE"
+    fi
+    case "$boot_start" in ''|*[!0-9]*) boot_start=0 ;; esac
+    case "$uptime_start" in ''|*[!0-9]*) uptime_start=0 ;; esac
+
+    if [ "$boot_start" -gt 0 ] 2>/dev/null; then
+        echo "boot:$boot_start"
+        return 0
+    fi
+    if [ "$uptime_start" -gt 0 ] 2>/dev/null; then
+        echo "uptime:$uptime_start"
+        return 0
+    fi
+    if [ -n "$last_result" ]; then
+        echo "result:$last_result"
+        return 0
+    fi
+    echo "uptime:$(get_uptime_sec)"
+}
+
+auto_snapshot_already_taken() {
+    local session_key existing_key
+    [ -f "$AUTO_SNAPSHOT_FILE" ] || return 1
+    [ -f "$AUTO_SNAPSHOT_SESSION_FILE" ] || return 1
+    session_key=$(get_auto_snapshot_session_key)
+    existing_key=$(cat "$AUTO_SNAPSHOT_SESSION_FILE" 2>/dev/null)
+    [ -n "$session_key" ] || return 1
+    [ "$existing_key" = "$session_key" ]
+}
+
+write_auto_snapshot_session() {
+    local session_key="$1"
+    [ -n "$session_key" ] || return 1
+    printf '%s\n' "$session_key" > "$AUTO_SNAPSHOT_SESSION_FILE" 2>/dev/null || return 1
+    chmod 0600 "$AUTO_SNAPSHOT_SESSION_FILE" 2>/dev/null
     return 0
 }
 
@@ -1685,11 +1761,16 @@ list_disabled_modules() {
 take_snapshot() {
     mkdir -p "$SNAPSHOT_DIR" 2>/dev/null
     local mode="${1:-manual}"
-    local snap_file tmp_file label
+    local snap_file tmp_file label session_key
     case "$mode" in
         auto)
             snap_file="$AUTO_SNAPSHOT_FILE"
             label="auto"
+            if auto_snapshot_already_taken; then
+                echo "$snap_file"
+                return 0
+            fi
+            session_key=$(get_auto_snapshot_session_key)
             ;;
         *)
             snap_file="$SNAPSHOT_DIR/snap-$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown).txt"
@@ -1720,6 +1801,8 @@ take_snapshot() {
     sync "$tmp_file" 2>/dev/null
     mv -f "$tmp_file" "$snap_file" 2>/dev/null || return 1
     chmod 0600 "$snap_file" 2>/dev/null
+    [ "$label" = "auto" ] && write_auto_snapshot_session "$session_key"
+    [ "$label" = "manual" ] && prune_manual_snapshots_in_dir "$SNAPSHOT_DIR"
     echo "$snap_file"
 }
 
@@ -1736,6 +1819,7 @@ restore_snapshot() {
         [ -z "$state" ] && continue
         # 安全校验
         case "$mod_id" in *[!A-Za-z0-9._-]*) continue ;; esac
+        case "$state" in enabled|disabled) ;; *) continue ;; esac
 
         # 在三个 base 中查找模块
         local found_dir=""
@@ -1760,15 +1844,23 @@ restore_snapshot() {
 # 列出所有快照
 list_snapshots() {
     [ ! -d "$SNAPSHOT_DIR" ] && return
-    ls -t "$SNAPSHOT_DIR"/snap-*.txt 2>/dev/null
+    prune_manual_snapshots_in_dir "$SNAPSHOT_DIR"
+    ls -1 "$SNAPSHOT_DIR"/snap-*.txt 2>/dev/null | sort -r
 }
 
 # 删除快照
 # 参数: <snap_file>
 delete_snapshot() {
     case "$1" in
-        "$SNAPSHOT_DIR"/snap-*.txt) [ -f "$1" ] && rm -f "$1" 2>/dev/null ;;
+        "$SNAPSHOT_DIR"/snap-*.txt)
+            [ -f "$1" ] || return 1
+            rm -f "$1" 2>/dev/null || return 1
+            ;;
+        *)
+            return 1
+            ;;
     esac
+    return 0
 }
 
 restore_good_modules_baseline() {

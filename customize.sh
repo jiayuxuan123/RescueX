@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.0 - customize.sh
+# RescueX v3.2.1 - customize.sh
 
 # v3.0.1 改进（专业级升级）：
 # - 三级渐进式救砖支持
@@ -8,13 +8,36 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.2.0"
+RX_VERSION="v3.2.1"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
 [ -z "$MODPATH" ] && MODPATH="${0%/*}"
 
 ui_print() { echo "$1"; }
+
+get_manual_snapshot_limit() {
+    local limit="${MAX_MANUAL_SNAPSHOTS:-12}"
+    case "$limit" in ''|*[!0-9]*) limit=12 ;; esac
+    [ "$limit" -lt 1 ] 2>/dev/null && limit=1
+    echo "$limit"
+}
+
+prune_manual_snapshots_dir() {
+    local dir="$1"
+    local limit count snap
+    [ -d "$dir" ] || return 0
+    limit=$(get_manual_snapshot_limit)
+    count=0
+    for snap in $(ls -1 "$dir"/snap-*.txt 2>/dev/null | sort -r); do
+        [ -f "$snap" ] || continue
+        count=$((count + 1))
+        if [ "$count" -gt "$limit" ]; then
+            rm -f "$snap" 2>/dev/null
+        fi
+    done
+    return 0
+}
 
 # Compat-8: set_perm 兼容层
 if ! command -v set_perm >/dev/null 2>&1; then
@@ -75,6 +98,7 @@ done
 
 # v2.7.0: 持久化目录（模块更新不丢失）
 PERSIST_DIR="/data/adb/rescuex_data"
+MAX_MANUAL_SNAPSHOTS=12
 
 CONFIG_PRESERVED=false
 WHITELIST_PRESERVED=false
@@ -103,6 +127,7 @@ if [ -n "$OLD_STATE_DIR" ]; then
     # v2.7.0: 保留补丁相关文件
     [ -f "$OLD_STATE_DIR/patch_fail_count" ] && cp "$OLD_STATE_DIR/patch_fail_count" "$STATE_DIR/patch_fail_count" 2>/dev/null
     [ -f "$OLD_STATE_DIR/patch_update_flag" ] && cp "$OLD_STATE_DIR/patch_update_flag" "$STATE_DIR/patch_update_flag" 2>/dev/null
+    [ -f "$OLD_STATE_DIR/auto_snapshot_session" ] && cp "$OLD_STATE_DIR/auto_snapshot_session" "$STATE_DIR/auto_snapshot_session" 2>/dev/null
     # v2.7.0: 保留救砖审计日志
     [ -f "$OLD_STATE_DIR/rescue_audit.log" ] && cp "$OLD_STATE_DIR/rescue_audit.log" "$STATE_DIR/rescue_audit.log" 2>/dev/null
     # 快照迁移
@@ -115,6 +140,7 @@ if [ -n "$OLD_STATE_DIR" ]; then
                 cp "$snap" "$SNAPSHOT_DIR/" 2>/dev/null && snap_count=$((snap_count + 1))
             fi
         done
+        prune_manual_snapshots_dir "$SNAPSHOT_DIR"
         ui_print "- 已迁移 $snap_count 个快照"
     fi
 fi
@@ -128,6 +154,7 @@ if [ "$CONFIG_PRESERVED" != "true" ] && [ -d "$PERSIST_DIR" ]; then
     [ -f "$PERSIST_DIR/boot_history" ] && cp "$PERSIST_DIR/boot_history" "$STATE_DIR/boot_history" 2>/dev/null
     [ -f "$PERSIST_DIR/boot_status" ] && cp "$PERSIST_DIR/boot_status" "$STATE_DIR/boot_status" 2>/dev/null && ui_print "- 已恢复启动统计"
     [ -f "$PERSIST_DIR/patch_fail_count" ] && cp "$PERSIST_DIR/patch_fail_count" "$STATE_DIR/patch_fail_count" 2>/dev/null
+    [ -f "$PERSIST_DIR/auto_snapshot_session" ] && cp "$PERSIST_DIR/auto_snapshot_session" "$STATE_DIR/auto_snapshot_session" 2>/dev/null
     [ -f "$PERSIST_DIR/rescue_audit.log" ] && cp "$PERSIST_DIR/rescue_audit.log" "$STATE_DIR/rescue_audit.log" 2>/dev/null
     [ -f "$PERSIST_DIR/good_modules.list" ] && cp "$PERSIST_DIR/good_modules.list" "$STATE_DIR/good_modules.list" 2>/dev/null
     if [ -d "$PERSIST_DIR/snapshots" ]; then
@@ -136,6 +163,7 @@ if [ "$CONFIG_PRESERVED" != "true" ] && [ -d "$PERSIST_DIR" ]; then
             snap_name=$(basename "$snap")
             [ ! -f "$SNAPSHOT_DIR/$snap_name" ] && cp "$snap" "$SNAPSHOT_DIR/" 2>/dev/null
         done
+        prune_manual_snapshots_dir "$SNAPSHOT_DIR"
     fi
 fi
 
@@ -293,7 +321,7 @@ ui_print "  · OTA 超时: 900 秒 (15 分钟)"
 ui_print "  · 补丁超时: 180 秒"
 ui_print "  · 渐进式救砖: 启用"
 ui_print "  · 启动模式感知: 启用"
-  ui_print "  · 数据持久化: 启用 (v3.2.0)"
+  ui_print "  · 数据持久化: 启用 (v3.2.1)"
 ui_print "  · DRY_RUN: 关闭"
 ui_print ""
 ui_print "  通过 WebUI 可调整全部参数"

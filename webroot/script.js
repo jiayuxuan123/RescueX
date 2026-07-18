@@ -106,7 +106,7 @@ const I18N = {
         about: '关于',
         version: '版本',
         manager: '管理器',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.0 继续整合快照、稳定基线、决策报告与高风险脚本拦截。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.1 继续整合快照、稳定基线、决策报告与高风险脚本拦截。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -388,7 +388,7 @@ const I18N = {
         about: 'About',
         version: 'Version',
         manager: 'Manager',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.0 continues the snapshot, baseline restore, decision report, and high-risk script interception pass.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.1 continues the snapshot, baseline restore, decision report, and high-risk script interception pass.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -804,7 +804,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.0' : 'Automatic Boot Rescue v3.2.0';
+        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.1' : 'Automatic Boot Rescue v3.2.1';
     }
 
     setupEasterEggs() {
@@ -1485,7 +1485,7 @@ done`;
     // === 快照管理 ===
     async loadSnapshots() {
         try {
-            const out = await this.exec(`ls -t "${this.snapshotDir}"/snap-*.txt 2>/dev/null`);
+            const out = await this.exec(`MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null && list_snapshots`);
             const container = this.qs('#snapshot-list');
             const snaps = out.split('\n').filter(s => s);
             if (snaps.length === 0) {
