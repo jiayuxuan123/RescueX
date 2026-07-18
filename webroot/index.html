@@ -18,7 +18,7 @@
                 <div class="logo-icon">R</div>
                 <div class="brand-text">
                     <div class="title">RescueX</div>
-                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.0.1</div>
+                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.2.0</div>
                 </div>
             </div>
             <div class="appbar-actions">
@@ -35,6 +35,70 @@
             <div class="status-label" data-i18n="current_status">当前状态</div>
             <div class="status-value" id="hero-status">加载中...</div>
             <div class="status-meta" id="hero-meta">--</div>
+        </div>
+
+        <div class="card risk-alert-card hidden" id="script-risk-card">
+            <div class="card-header">
+                <h2><span class="icon">!</span> <span data-i18n="script_risk_title">高风险脚本拦截</span></h2>
+                <span class="badge badge-err" id="script-risk-badge" data-i18n="script_risk_badge">已拦截</span>
+            </div>
+            <div class="card-body">
+                <p class="desc-text" id="script-risk-summary" data-i18n="script_risk_desc">检测到疑似擦除/格式化脚本，RescueX 已优先拦截并禁用对应入口。</p>
+                <div class="info-grid mt-16">
+                    <div class="info-tile">
+                        <div class="label" data-i18n="script_risk_module">模块</div>
+                        <div class="value" id="script-risk-module">--</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="script_risk_reason">命中规则</div>
+                        <div class="value" id="script-risk-reason">--</div>
+                    </div>
+                </div>
+                <div class="info-grid mt-8">
+                    <div class="info-tile">
+                        <div class="label" data-i18n="script_risk_action">处理动作</div>
+                        <div class="value" id="script-risk-action">--</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="script_risk_time">检测时间</div>
+                        <div class="value" id="script-risk-time">--</div>
+                    </div>
+                </div>
+                <div class="module-list mt-8">
+                    <div class="module-item mono-path" id="script-risk-path">--</div>
+                </div>
+                <div class="section-actions">
+                    <button class="btn btn-text" data-action="clearScriptRiskAlert" data-i18n="script_risk_clear">清除提醒</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card compact-card">
+            <div class="card-header">
+                <h2><span class="icon">◆</span> <span data-i18n="readiness_title">救砖就绪度</span></h2>
+                <span id="readiness-score" class="badge badge-info">--</span>
+            </div>
+            <div class="card-body">
+                <div class="info-grid readiness-grid">
+                    <div class="info-tile">
+                        <div class="label" data-i18n="readiness_baseline">已知良好基线</div>
+                        <div class="value" id="readiness-baseline">--</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="readiness_policy">目录权限策略</div>
+                        <div class="value" id="readiness-policy">--</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="readiness_mode">当前模式</div>
+                        <div class="value" id="readiness-mode">--</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="readiness_level">当前救砖级别</div>
+                        <div class="value" id="readiness-level">--</div>
+                    </div>
+                </div>
+                <div id="readiness-list" class="readiness-list"></div>
+            </div>
         </div>
 
         <!-- 启动状态 -->
@@ -336,6 +400,7 @@
                 <p class="desc-text" data-i18n="snapshot_desc">记录当前所有模块的启用/禁用状态，出问题可一键回滚。</p>
                 <div class="section-actions">
                     <button class="btn btn-filled" data-action="takeSnapshot" data-i18n="take_snapshot">拍快照</button>
+                    <button class="btn btn-tonal" data-action="restoreBaseline" data-i18n="restore_baseline">恢复稳定基线</button>
                 </div>
                 <div class="module-list mt-16" id="snapshot-list">
                     <div class="empty-state" data-i18n="no_snapshots">暂无快照</div>
@@ -379,6 +444,7 @@
                 </div>
                 <div class="section-actions">
                     <button class="btn btn-outlined" data-action="togglePatchFlag" data-i18n="toggle_patch_flag">设置/清除补丁标记</button>
+                    <button class="btn btn-outlined" data-action="generateDecisionReport" data-i18n="generate_decision_report">生成救援决策报告</button>
                     <button class="btn btn-outlined" data-action="generateReport" data-i18n="generate_report">生成诊断报告</button>
                 </div>
             </div>
@@ -414,14 +480,14 @@
                 <div class="info-grid">
                     <div class="info-tile">
                         <div class="label" data-i18n="version">版本</div>
-                        <div class="value text-mono">v3.0.1</div>
+                        <div class="value text-mono">v3.2.0</div>
                     </div>
                     <div class="info-tile">
                         <div class="label" data-i18n="manager">管理器</div>
                         <div class="value" id="info-manager">--</div>
                     </div>
                 </div>
-                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.0.1 新增嫌疑模块精准追踪、三级渐进式救砖、脚本目录禁用、APP 自动解冻等专业功能。</p>
+                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.0 继续整合快照、稳定基线、决策报告与高风险脚本拦截。</p>
                 <div class="section-actions">
                     <button class="btn btn-text btn-sm" data-action="showFeatures" data-i18n="feature_intro">功能介绍</button>
                     <button class="btn btn-text btn-sm" data-action="showPrivacy" data-i18n="privacy_policy">隐私协议</button>

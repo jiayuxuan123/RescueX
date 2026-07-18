@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.0.1 - common.sh
+# RescueX v3.2.0 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.0.1"
-RX_VERSION_CODE=301
+RX_VERSION="v3.2.0"
+RX_VERSION_CODE=320
 
 # ============================================================
 # 路径初始化
@@ -45,6 +45,9 @@ _rescuex_init_paths() {
     WATCHDOG_PID_FILE="$STATE_DIR/watchdog_pid"
     WATCHDOG_SCRIPT="$MODDIR/watchdog.sh"
     SNAPSHOT_DIR="$STATE_DIR/snapshots"
+    AUTO_SNAPSHOT_FILE="$SNAPSHOT_DIR/auto-snap-latest.txt"
+    SCRIPT_RISK_ALERT_FILE="$STATE_DIR/script_risk_alert.conf"
+    SCRIPT_RISK_QUARANTINE_DIR="$STATE_DIR/script_risk_quarantine"
 
     # v3.0.0: 嫌疑模块追踪
     GOOD_MODULES_FILE="$STATE_DIR/good_modules.list"   # 成功开机后的已知良好模块列表
@@ -78,6 +81,8 @@ _rescuex_init_paths() {
         fi
     done
     unset _ap_dir
+
+    SAFE_CUSTOM_DIR_PREFIXES="$PERSIST_DIR $STATE_DIR $SNAPSHOT_DIR /data/local/tmp/RescueX"
 }
 
 # ============================================================
@@ -157,7 +162,7 @@ sync_to_persist() {
     # 快照目录
     if [ -d "$SNAPSHOT_DIR" ]; then
         mkdir -p "$PERSIST_DIR/snapshots" 2>/dev/null
-        for snap in "$SNAPSHOT_DIR"/snap-*.txt; do
+        for snap in "$SNAPSHOT_DIR"/snap-*.txt "$SNAPSHOT_DIR"/auto-snap-*.txt; do
             [ -f "$snap" ] && cp "$snap" "$PERSIST_DIR/snapshots/" 2>/dev/null
         done
     fi
@@ -176,7 +181,7 @@ restore_from_persist() {
     # 快照恢复
     if [ -d "$PERSIST_DIR/snapshots" ]; then
         mkdir -p "$SNAPSHOT_DIR" 2>/dev/null
-        for snap in "$PERSIST_DIR/snapshots"/snap-*.txt; do
+        for snap in "$PERSIST_DIR/snapshots"/snap-*.txt "$PERSIST_DIR/snapshots"/auto-snap-*.txt; do
             [ -f "$snap" ] || continue
             snap_name=$(basename "$snap")
             [ ! -f "$SNAPSHOT_DIR/$snap_name" ] && cp "$snap" "$SNAPSHOT_DIR/" 2>/dev/null && restored=$((restored + 1))
@@ -627,6 +632,7 @@ set_patch_flag() {
     echo "1" > "$PATCH_FLAG_FILE" 2>/dev/null
     sync "$PATCH_FLAG_FILE" 2>/dev/null
     log "补丁更新标记已设置（手动）"
+    log_rescue_action "PATCH_FLAG_SET" "manual"
 }
 
 # 清除补丁更新标记（启动成功后调用）
@@ -634,6 +640,407 @@ clear_patch_flag() {
     rm -f "$PATCH_FLAG_FILE" 2>/dev/null
     write_patch_fail_count 0
     log "补丁更新标记已清除（启动成功）"
+}
+
+manual_clear_patch_flag() {
+    clear_patch_flag
+    log_rescue_action "PATCH_FLAG_CLEAR" "manual"
+}
+
+# ============================================================
+# WebUI 手动入口与安全写入
+# ============================================================
+
+_write_file_atomic() {
+    local target="$1"
+    local content="$2"
+    [ -z "$target" ] && return 1
+    mkdir -p "${target%/*}" 2>/dev/null
+    local tmp="${target}.tmp.$$"
+    printf '%s' "$content" > "$tmp" 2>/dev/null || return 1
+    sync "$tmp" 2>/dev/null
+    mv -f "$tmp" "$target" 2>/dev/null || return 1
+    return 0
+}
+
+_normalize_safe_dir() {
+    local dir="$1"
+    [ -z "$dir" ] && return 1
+    case "$dir" in
+        */) printf '%s' "${dir%/}" ;;
+        *) printf '%s' "$dir" ;;
+    esac
+}
+
+is_safe_custom_dir() {
+    local dir normalized prefix norm_prefix
+    dir="$1"
+    [ -z "$dir" ] && return 1
+    case "$dir" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    case "$dir" in
+        *".."*|*"*"*|*"?"*|*"["*|*"]"*|*" "*|*"\t"*) return 1 ;;
+    esac
+
+    normalized=$(_normalize_safe_dir "$dir") || return 1
+    for prefix in $SAFE_CUSTOM_DIR_PREFIXES; do
+        norm_prefix=$(_normalize_safe_dir "$prefix") || continue
+        [ "$normalized" = "$norm_prefix" ] && return 0
+        case "$normalized" in
+            "$norm_prefix"/*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+save_custom_dirs_file() {
+    local input_file="$1"
+    [ -z "$input_file" ] || [ ! -f "$input_file" ] && return 1
+
+    local line dir perm normalized safe_count=0 reject_count=0
+    local tmp_content="$STATE_DIR/.custom_dirs.content.$$"
+    : > "$tmp_content" 2>/dev/null || return 1
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        dir=$(printf '%s' "$line" | awk '{print $1}')
+        perm=$(printf '%s' "$line" | awk '{print $2}')
+        [ -z "$dir" ] || [ -z "$perm" ] && { reject_count=$((reject_count + 1)); continue; }
+        case "$perm" in 700|750|755|770) ;; *) reject_count=$((reject_count + 1)); continue ;; esac
+        if is_safe_custom_dir "$dir"; then
+            normalized=$(_normalize_safe_dir "$dir")
+            printf '%s %s\n' "$normalized" "$perm" >> "$tmp_content"
+            safe_count=$((safe_count + 1))
+        else
+            reject_count=$((reject_count + 1))
+        fi
+    done < "$input_file"
+
+    if _write_file_atomic "$STATE_DIR/custom_dirs.conf" "$(cat "$tmp_content" 2>/dev/null)"; then
+        chmod 0600 "$STATE_DIR/custom_dirs.conf" 2>/dev/null
+        log_rescue_action "CUSTOM_DIRS_SAVE" "saved=$safe_count,rejected=$reject_count"
+        rm -f "$tmp_content" 2>/dev/null
+        printf 'SAVED=%s\nREJECTED=%s\n' "$safe_count" "$reject_count"
+        return 0
+    fi
+    rm -f "$tmp_content" 2>/dev/null
+    return 1
+}
+
+clear_suspect_log() {
+    : > "$SUSPECT_LOG" 2>/dev/null || return 1
+    chmod 0600 "$SUSPECT_LOG" 2>/dev/null
+    log_rescue_action "SUSPECT_LOG_CLEAR" "manual"
+    return 0
+}
+
+clear_script_risk_alert() {
+    rm -f "$SCRIPT_RISK_ALERT_FILE" 2>/dev/null
+    log_rescue_action "SCRIPT_RISK_ALERT_CLEAR" "manual"
+    return 0
+}
+
+_list_current_module_ids() {
+    local base mod_id mod_dir
+    for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
+        [ -z "$base" ] || [ ! -d "$base" ] && continue
+        for mod_dir in "$base"/*/; do
+            [ ! -d "$mod_dir" ] && continue
+            mod_id=$(basename "$mod_dir")
+            [ "$mod_id" = "$SELF_ID" ] && continue
+            [ -f "${mod_dir}remove" ] && continue
+            case "$mod_id" in *[!A-Za-z0-9._-]*) continue ;; esac
+            printf '%s\n' "$mod_id"
+        done
+    done
+}
+
+prune_suspect_log() {
+    [ -f "$SUSPECT_LOG" ] || return 0
+
+    local current_file="${STATE_DIR}/.current_modules.$$"
+    local tmp_log="${SUSPECT_LOG}.tmp.$$"
+    local line mod_id kept=0 removed=0
+
+    _list_current_module_ids | sort -u > "$current_file" 2>/dev/null
+    : > "$tmp_log" 2>/dev/null || {
+        rm -f "$current_file" 2>/dev/null
+        return 1
+    }
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        case "$line" in
+            \#*) continue ;;
+            \?*) mod_id="${line#\?}" ;;
+            +*) mod_id="${line#+}" ;;
+            :*) mod_id="${line#:}" ;;
+            *) mod_id="$line" ;;
+        esac
+        case "$mod_id" in ''|*[!A-Za-z0-9._-]*) removed=$((removed + 1)); continue ;; esac
+        if grep -qx "$mod_id" "$current_file" 2>/dev/null; then
+            printf '%s\n' "$line" >> "$tmp_log"
+            kept=$((kept + 1))
+        else
+            removed=$((removed + 1))
+            log "移除过期嫌疑记录: $mod_id"
+        fi
+    done < "$SUSPECT_LOG"
+
+    mv -f "$tmp_log" "$SUSPECT_LOG"
+    chmod 0600 "$SUSPECT_LOG" 2>/dev/null
+    rm -f "$current_file" 2>/dev/null
+    [ "$removed" -gt 0 ] && log_rescue_action "SUSPECT_LOG_PRUNE" "kept=$kept,removed=$removed"
+    return 0
+}
+
+reset_rescue_level_state() {
+    write_rescue_level 0
+    log_rescue_action "RESCUE_LEVEL_RESET" "manual"
+    return 0
+}
+
+manual_save_good_modules() {
+    save_good_modules || return 1
+    local enabled_count=0
+    if [ -f "$GOOD_MODULES_FILE" ]; then
+        enabled_count=$(grep -cv '^:' "$GOOD_MODULES_FILE" 2>/dev/null || echo 0)
+    fi
+    log_rescue_action "GOOD_MODULES_SAVE" "manual,enabled=$enabled_count"
+    printf '%s\n' "$enabled_count"
+    return 0
+}
+
+manual_lock_script_dirs() {
+    disable_script_dirs
+    printf 'LOCKED=%s\n' "${SCRIPT_DIRS_LOCKED_LAST:-0}"
+    return 0
+}
+
+manual_unfreeze_apps() {
+    app_unfreeze
+    printf '%s\n' "${APP_UNFREEZE_LAST_RESULT:-SKIP}"
+    return 0
+}
+
+manual_take_snapshot() {
+    local mode="${1:-manual}"
+    local snap
+    snap=$(take_snapshot "$mode") || return 1
+    case "$mode" in
+        auto) log_rescue_action "AUTO_SNAPSHOT_SAVE" "$(basename "$snap")" ;;
+        *) log_rescue_action "SNAPSHOT_SAVE" "$(basename "$snap")" ;;
+    esac
+    printf '%s\n' "$snap"
+    return 0
+}
+
+manual_restore_snapshot() {
+    local snap_file="$1"
+    case "$snap_file" in
+        "$SNAPSHOT_DIR"/snap-*.txt|"$AUTO_SNAPSHOT_FILE") ;;
+        *) return 1 ;;
+    esac
+    restore_snapshot "$snap_file" || return 1
+    log_rescue_action "SNAPSHOT_RESTORE" "$(basename "$snap_file")"
+    printf 'OK\n'
+    return 0
+}
+
+manual_delete_snapshot() {
+    local snap_file="$1"
+    case "$snap_file" in
+        "$SNAPSHOT_DIR"/snap-*.txt) ;;
+        *) return 1 ;;
+    esac
+    delete_snapshot "$snap_file"
+    log_rescue_action "SNAPSHOT_DELETE" "$(basename "$snap_file")"
+    printf 'OK\n'
+    return 0
+}
+
+manual_restore_good_modules_baseline() {
+    restore_good_modules_baseline
+}
+
+manual_generate_rescue_decision_report() {
+    generate_rescue_decision_report
+}
+
+manual_clear_script_risk_alert() {
+    clear_script_risk_alert
+    printf 'OK\n'
+    return 0
+}
+
+send_root_notification() {
+    local title="$1"
+    local text="$2"
+    [ -z "$title" ] && return 1
+    [ -z "$text" ] && return 1
+    command -v cmd >/dev/null 2>&1 || return 1
+    cmd notification post -S bigtext -t "$title" RescueX "$text" >/dev/null 2>&1 && return 0
+    cmd notification post -t "$title" RescueX "$text" >/dev/null 2>&1 && return 0
+    return 1
+}
+
+_write_script_risk_alert() {
+    local module_id="$1"
+    local script_path="$2"
+    local reason="$3"
+    local action="$4"
+    local detected_at
+    detected_at=$(get_log_time)
+    _write_file_atomic "$SCRIPT_RISK_ALERT_FILE" "DETECTED=1
+MODULE_ID=${module_id}
+SCRIPT_PATH=${script_path}
+REASON=${reason}
+ACTION=${action}
+DETECTED_AT=${detected_at}
+NOTIFIED=0
+" || return 1
+    chmod 0600 "$SCRIPT_RISK_ALERT_FILE" 2>/dev/null
+    return 0
+}
+
+_mark_script_risk_alert_notified() {
+    [ -f "$SCRIPT_RISK_ALERT_FILE" ] || return 1
+    local tmp_file="$SCRIPT_RISK_ALERT_FILE.tmp.$$"
+    local changed=0 k v
+    : > "$tmp_file" 2>/dev/null || return 1
+    while IFS='=' read -r k v || [ -n "$k$v" ]; do
+        [ -z "$k" ] && continue
+        if [ "$k" = "NOTIFIED" ]; then
+            printf 'NOTIFIED=1\n' >> "$tmp_file"
+            changed=1
+        else
+            printf '%s=%s\n' "$k" "$v" >> "$tmp_file"
+        fi
+    done < "$SCRIPT_RISK_ALERT_FILE"
+    [ "$changed" -eq 1 ] || printf 'NOTIFIED=1\n' >> "$tmp_file"
+    mv -f "$tmp_file" "$SCRIPT_RISK_ALERT_FILE" 2>/dev/null || return 1
+    chmod 0600 "$SCRIPT_RISK_ALERT_FILE" 2>/dev/null
+    return 0
+}
+
+notify_pending_script_risk_alert() {
+    [ -f "$SCRIPT_RISK_ALERT_FILE" ] || return 1
+    local module_id="unknown" script_path="unknown" reason="high-risk script" action_taken="blocked" notified=0 k v
+    while IFS='=' read -r k v || [ -n "$k$v" ]; do
+        [ -z "$k" ] && continue
+        case "$k" in
+            MODULE_ID) module_id="$v" ;;
+            SCRIPT_PATH) script_path="$v" ;;
+            REASON) reason="$v" ;;
+            ACTION) action_taken="$v" ;;
+            NOTIFIED) notified="$v" ;;
+        esac
+    done < "$SCRIPT_RISK_ALERT_FILE"
+    [ "$notified" = "1" ] && return 0
+    send_root_notification "RescueX 安全提醒" "已拦截高风险脚本: ${module_id} (${reason})" || return 1
+    log "已发送高风险脚本通知: $module_id | $script_path | $reason"
+    _mark_script_risk_alert_notified
+    return 0
+}
+
+detect_destructive_script_content() {
+    local target="$1"
+    [ -f "$target" ] || return 1
+    grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null | grep -Eiq '(^|[;&|[:space:]])rm[[:space:]]+-[[:alnum:]]*r[[:alnum:]]*f[[:space:]]+/((data|cache|metadata|persist)(/|[[:space:]]|$)|sdcard([/[:space:]]|$)|storage(/emulated)?(/|[[:space:]]|$))' && {
+        echo 'rm-rf-sensitive-path'
+        return 0
+    }
+    grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null | grep -Eiq 'find[[:space:]]+/((data|cache|metadata)(/|[[:space:]]|$)|sdcard([/[:space:]]|$)|storage(/emulated)?(/|[[:space:]]|$)).*-delete' && {
+        echo 'find-delete-sensitive-path'
+        return 0
+    }
+    grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null | grep -Eiq '(^|[;&|[:space:]])(mkfs|mke2fs|make_f2fs|newfs_msdos|wipefs|blkdiscard)([[:space:]]|$)' && {
+        echo 'format-command'
+        return 0
+    }
+    grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null | grep -Eiq 'dd[[:space:]].*of=/dev/(block|mmcblk|nvme|sd[a-z])' && {
+        echo 'raw-block-write'
+        return 0
+    }
+    grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null | grep -Eiq '(recovery|twrp|toybox)[[:space:]].*(wipe|format)|(^|[;&|[:space:]])sm[[:space:]]+format([[:space:]]|$)|(^|[;&|[:space:]])vdc[[:space:]].*format' && {
+        echo 'wipe-or-format-invocation'
+        return 0
+    }
+    return 1
+}
+
+_disable_module_by_dir() {
+    local module_dir="$1"
+    [ -d "$module_dir" ] || return 1
+    touch "$module_dir/disable" 2>/dev/null || return 1
+    chmod 000 "$module_dir/post-fs-data.sh" "$module_dir/service.sh" "$module_dir/post-mount.sh" "$module_dir/boot-completed.sh" 2>/dev/null
+    return 0
+}
+
+_quarantine_script_file() {
+    local target="$1"
+    [ -f "$target" ] || return 1
+    mkdir -p "$SCRIPT_RISK_QUARANTINE_DIR" 2>/dev/null
+    chmod 000 "$target" 2>/dev/null
+    cp "$target" "$SCRIPT_RISK_QUARANTINE_DIR/$(basename "$target").$(date +%s 2>/dev/null || echo 0).blocked" 2>/dev/null
+    return 0
+}
+
+scan_and_block_destructive_scripts() {
+    local hits=0 base mod_dir mod_id candidate reason rel label
+    for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
+        [ -z "$base" ] || [ ! -d "$base" ] && continue
+        for mod_dir in "$base"/*/; do
+            [ -d "$mod_dir" ] || continue
+            mod_id=$(basename "$mod_dir")
+            [ "$mod_id" = "$SELF_ID" ] && continue
+            [ -f "${mod_dir}disable" ] && continue
+            case "$mod_id" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
+            for rel in post-fs-data.sh service.sh post-mount.sh boot-completed.sh service.d post-fs-data.d post-mount.d boot-completed.d; do
+                candidate="${mod_dir}${rel}"
+                if [ -f "$candidate" ]; then
+                    reason=$(detect_destructive_script_content "$candidate" 2>/dev/null) || continue
+                    _disable_module_by_dir "$mod_dir"
+                    _quarantine_script_file "$candidate"
+                    _write_script_risk_alert "$mod_id" "$candidate" "$reason" "module-disabled"
+                    log "拦截高风险脚本模块: $mod_id | $candidate | $reason"
+                    log_rescue_action "SCRIPT_RISK_BLOCK" "$mod_id|$candidate|$reason"
+                    hits=$((hits + 1))
+                    break
+                elif [ -d "$candidate" ]; then
+                    for label in "$candidate"/*.sh "$candidate"/*; do
+                        [ -f "$label" ] || continue
+                        reason=$(detect_destructive_script_content "$label" 2>/dev/null) || continue
+                        _disable_module_by_dir "$mod_dir"
+                        _quarantine_script_file "$label"
+                        _write_script_risk_alert "$mod_id" "$label" "$reason" "module-disabled"
+                        log "拦截高风险脚本模块: $mod_id | $label | $reason"
+                        log_rescue_action "SCRIPT_RISK_BLOCK" "$mod_id|$label|$reason"
+                        hits=$((hits + 1))
+                        break
+                    done
+                    [ "$hits" -gt 0 ] && break
+                fi
+            done
+        done
+    done
+
+    for label in /data/adb/post-fs-data.d /data/adb/service.d /data/adb/post-mount.d /data/adb/boot-completed.d /data/adb/ksu/service.d /data/adb/ap/service.d; do
+        [ -d "$label" ] || continue
+        for candidate in "$label"/*.sh "$label"/*; do
+            [ -f "$candidate" ] || continue
+            reason=$(detect_destructive_script_content "$candidate" 2>/dev/null) || continue
+            _quarantine_script_file "$candidate"
+            _write_script_risk_alert "global-script" "$candidate" "$reason" "script-blocked"
+            log "拦截高风险全局脚本: $candidate | $reason"
+            log_rescue_action "SCRIPT_RISK_BLOCK" "global-script|$candidate|$reason"
+            hits=$((hits + 1))
+        done
+    done
+
+    printf '%s\n' "$hits"
+    return 0
 }
 
 # 补丁回滚逻辑（轻量级，不清整机数据）
@@ -994,7 +1401,7 @@ progressive_rescue() {
 
     # v2.7.0: 救砖前自动拍快照
     local auto_snap
-    auto_snap=$(take_snapshot)
+    auto_snap=$(take_snapshot auto)
     [ -n "$auto_snap" ] && log "救砖前自动快照: $(basename "$auto_snap")"
 
     local disabled=0
@@ -1023,7 +1430,7 @@ full_rescue() {
 
     # v2.7.0: 救砖前自动拍快照
     local auto_snap
-    auto_snap=$(take_snapshot)
+    auto_snap=$(take_snapshot auto)
     [ -n "$auto_snap" ] && log "救砖前自动快照: $(basename "$auto_snap")"
 
     local disabled=0 skipped=0
@@ -1274,11 +1681,25 @@ list_disabled_modules() {
 # ============================================================
 
 # 拍快照：记录当前所有模块的 enable/disable 状态
+# 参数: [manual|auto]
 take_snapshot() {
     mkdir -p "$SNAPSHOT_DIR" 2>/dev/null
-    local snap_file="$SNAPSHOT_DIR/snap-$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown).txt"
+    local mode="${1:-manual}"
+    local snap_file tmp_file label
+    case "$mode" in
+        auto)
+            snap_file="$AUTO_SNAPSHOT_FILE"
+            label="auto"
+            ;;
+        *)
+            snap_file="$SNAPSHOT_DIR/snap-$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown).txt"
+            label="manual"
+            ;;
+    esac
+    tmp_file="${snap_file}.tmp.$$"
     {
         echo "# RescueX 模块快照 - $(date 2>/dev/null)"
+        echo "# 类型: $label"
         echo "# 格式: mod_id=enabled|disabled"
         local base mod_id mod_dir
         for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
@@ -1295,7 +1716,10 @@ take_snapshot() {
                 fi
             done
         done
-    } > "$snap_file" 2>/dev/null
+    } > "$tmp_file" 2>/dev/null || return 1
+    sync "$tmp_file" 2>/dev/null
+    mv -f "$tmp_file" "$snap_file" 2>/dev/null || return 1
+    chmod 0600 "$snap_file" 2>/dev/null
     echo "$snap_file"
 }
 
@@ -1345,6 +1769,134 @@ delete_snapshot() {
     case "$1" in
         "$SNAPSHOT_DIR"/snap-*.txt) [ -f "$1" ] && rm -f "$1" 2>/dev/null ;;
     esac
+}
+
+restore_good_modules_baseline() {
+    [ -f "$GOOD_MODULES_FILE" ] || return 1
+
+    local line mod_id desired_state found_dir base changed=0 skipped=0
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        case "$line" in
+            \#*) continue ;;
+            :*) mod_id="${line#:}"; desired_state="disabled" ;;
+            *) mod_id="$line"; desired_state="enabled" ;;
+        esac
+        case "$mod_id" in ''|*[!A-Za-z0-9._-]*) skipped=$((skipped + 1)); continue ;; esac
+        [ "$mod_id" = "$SELF_ID" ] && continue
+
+        found_dir=""
+        for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
+            [ -z "$base" ] || [ ! -d "$base" ] && continue
+            if [ -d "$base/$mod_id" ]; then
+                found_dir="$base/$mod_id"
+                break
+            fi
+        done
+        [ -z "$found_dir" ] && { skipped=$((skipped + 1)); continue; }
+
+        if [ "$desired_state" = "enabled" ]; then
+            if [ -f "${found_dir}/disable" ]; then
+                rm -f "${found_dir}/disable" 2>/dev/null && changed=$((changed + 1))
+            fi
+        else
+            if [ ! -f "${found_dir}/disable" ]; then
+                touch "${found_dir}/disable" 2>/dev/null && changed=$((changed + 1))
+            fi
+        fi
+    done < "$GOOD_MODULES_FILE"
+
+    log "已恢复稳定基线: changed=$changed skipped=$skipped"
+    log_rescue_action "BASELINE_RESTORE" "changed=$changed,skipped=$skipped"
+    printf 'CHANGED=%s\nSKIPPED=%s\n' "$changed" "$skipped"
+    return 0
+}
+
+generate_rescue_decision_report() {
+    local rescue_level=0 fail_count=0 threshold=0 boot_result="UNKNOWN" patch_detected="false"
+    local baseline_total=0 baseline_enabled=0 suspect_new=0 suspect_reenabled=0 suspect_uncertain=0
+    local suspect_lines=""
+    local recommendation=""
+
+    read_config
+    read_status
+    read_rescue_level
+
+    fail_count="${FAIL_COUNT:-0}"
+    threshold="${REBOOT_THRESHOLD:-0}"
+    boot_result="${BOOT_RESULT:-UNKNOWN}"
+    patch_detected="${PATCH_DETECTED:-false}"
+
+    if [ -f "$GOOD_MODULES_FILE" ]; then
+        baseline_total=$(grep -cve '^\s*$' "$GOOD_MODULES_FILE" 2>/dev/null || echo 0)
+        baseline_enabled=$(grep -cve '^[:#]' "$GOOD_MODULES_FILE" 2>/dev/null || echo 0)
+    fi
+
+    if [ -f "$SUSPECT_LOG" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            [ -z "$line" ] && continue
+            case "$line" in
+                \#*) continue ;;
+                +*) suspect_reenabled=$((suspect_reenabled + 1)) ;;
+                \?*) suspect_uncertain=$((suspect_uncertain + 1)) ;;
+                *) suspect_new=$((suspect_new + 1)) ;;
+            esac
+            suspect_lines="${suspect_lines}${line}\n"
+        done < "$SUSPECT_LOG"
+    fi
+
+    case "$rescue_level" in
+        0) rescue_level="0: 精准嫌疑禁用" ;;
+        1) rescue_level="1: 全量模块禁用 + 脚本锁定" ;;
+        2) rescue_level="2: APP 解冻" ;;
+        *) rescue_level="0: 精准嫌疑禁用" ;;
+    esac
+
+    if [ "$baseline_total" -eq 0 ]; then
+        recommendation="当前缺少稳定基线。设备稳定后先保存当前模块列表，再观察后续启动结果。"
+    elif [ "$suspect_new" -gt 0 ]; then
+        recommendation="优先保持新增嫌疑模块处于禁用状态，完成一次稳定启动后再逐个复核。"
+    elif [ "$suspect_reenabled" -gt 0 ]; then
+        recommendation="重点检查最近重新启用的模块，必要时回到稳定基线后逐个恢复。"
+    elif [ "$patch_detected" = "true" ]; then
+        recommendation="当前处于补丁相关窗口，优先核对补丁模块和 update 缓存恢复结果。"
+    elif [ "$fail_count" -ge "$threshold" ] 2>/dev/null; then
+        recommendation="失败计数已经达到阈值，建议立即恢复稳定基线并检查白名单与脚本目录。"
+    else
+        recommendation="当前适合先保留现状，继续观察下一次完整启动，并保留最新诊断报告。"
+    fi
+
+    {
+        echo "=========================================="
+        echo "  RescueX 救援决策报告"
+        echo "  版本: $RX_VERSION (code=$RX_VERSION_CODE)"
+        echo "  生成时间: $(get_log_time)"
+        echo "=========================================="
+        echo ""
+        echo "=== 当前判断 ==="
+        echo "启动结果: $boot_result"
+        echo "连续失败次数: $fail_count / $threshold"
+        echo "当前救砖级别: $rescue_level"
+        echo "补丁窗口: $patch_detected"
+        echo ""
+        echo "=== 稳定基线 ==="
+        echo "基线总数: $baseline_total"
+        echo "基线启用模块: $baseline_enabled"
+        echo ""
+        echo "=== 嫌疑模块统计 ==="
+        echo "新增嫌疑: $suspect_new"
+        echo "重新启用嫌疑: $suspect_reenabled"
+        echo "不确定参考: $suspect_uncertain"
+        if [ -n "$suspect_lines" ]; then
+            echo ""
+            echo "=== 嫌疑清单 ==="
+            printf '%b' "$suspect_lines"
+        fi
+        echo ""
+        echo "=== 建议动作 ==="
+        echo "$recommendation"
+        echo "=========================================="
+    }
 }
 
 # ============================================================
@@ -1577,6 +2129,7 @@ compute_boot_stats() {
     local total=0 success=0 rescued=0 failed=0
     local total_duration=0 duration_count=0
     local last_rescue_time=0 last_success_time=0
+    local history_last_rescue_time=0 status_last_rescue_time=0 status_rescued=0
     # v2.6.0: 移除未使用的 first_boot_time 变量
     # 累计启动耗时（来自 SERVICE 行）
     local sum_duration=0
@@ -1609,7 +2162,7 @@ compute_boot_stats() {
     #   现追加 awk 兜底：若参数展开后 dur_val 仍为空但行中确实含 duration=，
     #   说明参数展开在该 toybox 版本上未按预期工作，此时用 awk 重新提取，
     #   保证任何环境下平均耗时统计都不会静默失效。
-    local line result dur_val
+    local line result dur_val hist_ts rescue_from_history=0
     while IFS= read -r line || [ -n "$line" ]; do
         [ -z "$line" ] && continue
         # 检测行类型
@@ -1643,35 +2196,50 @@ compute_boot_stats() {
                 total=$((total + 1))
                 # v2.6.0: 移除死代码 first_boot_time（计算后从未被使用）
                 ;;
+            *"RESCUE "*|*"RESCUE|"*)
+                rescue_from_history=$((rescue_from_history + 1))
+                case "$line" in
+                    \[*\]*)
+                        hist_ts=${line#"["}
+                        hist_ts=${hist_ts%%"]"*}
+                        case "$hist_ts" in
+                            ''|*[!0-9]*) ;;
+                            *) history_last_rescue_time="$hist_ts" ;;
+                        esac
+                        ;;
+                esac
+                ;;
         esac
     done < "$HISTORY_FILE"
 
     # 从状态文件读取救砖次数与时间
     if [ -f "$STATUS_FILE" ]; then
-        last_rescue_time=$(grep "^LAST_RESCUE_TIME=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
-        case "$last_rescue_time" in ''|*[!0-9]*) last_rescue_time=0 ;; esac
-        rescued=$(grep "^RESCUE_COUNT=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
-        case "$rescued" in ''|*[!0-9]*) rescued=0 ;; esac
+        status_last_rescue_time=$(grep "^LAST_RESCUE_TIME=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
+        case "$status_last_rescue_time" in ''|*[!0-9]*) status_last_rescue_time=0 ;; esac
+        status_rescued=$(grep "^RESCUE_COUNT=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
+        case "$status_rescued" in ''|*[!0-9]*) status_rescued=0 ;; esac
         # BOOT_END 作为最近成功时间
         last_success_time=$(grep "^BOOT_END=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
         case "$last_success_time" in ''|*[!0-9]*) last_success_time=0 ;; esac
     fi
-    # v2.7.2: 审计日志兜底 — RESCUE_COUNT 可能在覆盖升级时丢失，审计日志只追加不丢失
-    local audit_count=0
-    if [ -f "$STATE_DIR/rescue_audit.log" ]; then
-        audit_count=$(wc -l < "$STATE_DIR/rescue_audit.log" 2>/dev/null || echo 0)
-        case "$audit_count" in ''|*[!0-9]*) audit_count=0 ;; esac
-    fi
-    [ "$audit_count" -gt "$rescued" ] && rescued=$audit_count
 
-    # 估算失败次数：总启动 - 成功启动 - 救砖次数（保守值，可能为负→0）
-    failed=$((total - success - rescued))
+    # v3.2.0: 统计口径统一为 boot_history 优先，状态文件仅作历史缺失时兜底。
+    # 这样旧版本遗留的 RESCUE_COUNT 脏数据不会继续污染 WebUI 统计。
+    if [ "$rescue_from_history" -gt 0 ]; then
+        rescued=$rescue_from_history
+        last_rescue_time=$history_last_rescue_time
+    else
+        rescued=$status_rescued
+        last_rescue_time=$status_last_rescue_time
+    fi
+
+    # 启动失败次数按实际启动次数估算：总启动 - 成功启动
+    failed=$((total - success))
     [ "$failed" -lt 0 ] && failed=0
 
     local success_rate=0 avg_duration=0
-    local effective_total=$((success + failed + rescued))
-    if [ "$effective_total" -gt 0 ]; then
-        success_rate=$((success * 100 / effective_total))
+    if [ "$total" -gt 0 ]; then
+        success_rate=$((success * 100 / total))
     fi
     if [ "$duration_count" -gt 0 ]; then
         avg_duration=$((sum_duration / duration_count))
@@ -1685,6 +2253,50 @@ compute_boot_stats() {
     echo "AVG_DURATION=$avg_duration"
     echo "LAST_RESCUE_TIME=$last_rescue_time"
     echo "LAST_SUCCESS_TIME=$last_success_time"
+}
+
+get_dashboard_snapshot() {
+    local wd_pid wd_status wd_cmd
+
+    if [ -f "$STATUS_FILE" ]; then
+        cat "$STATUS_FILE"
+    else
+        cat << 'EOF'
+BOOT_START=0
+BOOT_END=0
+SERVICE_STARTED=0
+FAIL_COUNT=0
+LAST_BOOT_RESULT=UNKNOWN
+OTA_DETECTED=false
+RESCUE_COUNT=0
+LAST_RESCUE_TIME=0
+BOOT_DURATION=0
+UPTIME_START=0
+UPTIME_END=0
+PATCH_DETECTED=false
+EOF
+    fi
+
+    echo "PATCH_FLAG=$(cat "$PATCH_FLAG_FILE" 2>/dev/null || echo 0)"
+    echo "PATCH_FAIL_COUNT=$(cat "$PATCH_FAIL_COUNT_FILE" 2>/dev/null || echo 0)"
+
+    wd_pid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null || echo 0)
+    echo "WD_PID=$wd_pid"
+    wd_status="nopid"
+    if [ -n "$wd_pid" ] && echo "$wd_pid" | grep -qE '^[0-9]+$'; then
+        if kill -0 "$wd_pid" 2>/dev/null; then
+            wd_cmd=$(cat "/proc/$wd_pid/cmdline" 2>/dev/null | tr '\0' ' ')
+            case "$wd_cmd" in
+                *watchdog*|*rescue*) wd_status="alive_ours" ;;
+                *) wd_status="alive_other" ;;
+            esac
+        else
+            wd_status="dead"
+        fi
+    fi
+    echo "WD_STATUS=$wd_status"
+
+    compute_boot_stats
 }
 
 # ============================================================
@@ -1900,6 +2512,7 @@ disable_script_dirs() {
 
     log "脚本目录锁定完成 ($locked 个目录)"
     log_rescue_action "LOCK_SCRIPT_DIRS" "locked=$locked"
+    SCRIPT_DIRS_LOCKED_LAST="$locked"
 }
 
 # ============================================================
@@ -1955,6 +2568,7 @@ save_good_modules() {
     # v3.0.0: 启动成功后重置救砖级别为 0（下次救砖从嫌疑禁用开始）
     echo "0" > "$RESCUE_LEVEL_FILE" 2>/dev/null
     chmod 0600 "$RESCUE_LEVEL_FILE" 2>/dev/null
+    prune_suspect_log
 }
 
 # 检测嫌疑模块：对比当前模块与已知良好列表
@@ -2088,7 +2702,7 @@ suspect_rescue() {
 
     # v3.0.0: 救砖前自动拍快照
     local auto_snap
-    auto_snap=$(take_snapshot)
+    auto_snap=$(take_snapshot auto)
     [ -n "$auto_snap" ] && log "救砖前自动快照: $(basename "$auto_snap")"
 
     if ! detect_suspect_modules; then
@@ -2210,9 +2824,11 @@ app_unfreeze() {
         log "APP 解冻完成，准备重启"
         log_rescue_action "APP_UNFREEZE" "package-restrictions.xml deleted"
         sync
+        APP_UNFREEZE_LAST_RESULT="DONE"
     else
         log "未发现需要解冻的限制文件"
         log_rescue_action "APP_UNFREEZE_SKIP" "no restrictions found"
+        APP_UNFREEZE_LAST_RESULT="SKIP"
     fi
 
     # 重置救砖级别回到 0（解冻后若成功，下次从嫌疑禁用开始）

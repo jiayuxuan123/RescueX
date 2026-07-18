@@ -103,6 +103,12 @@ body {
     font-size: 18px;
     font-weight: 700;
     box-shadow: var(--elev-1);
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.appbar .logo-icon.easter-glow {
+    transform: translateY(-1px) scale(1.06);
+    box-shadow: 0 0 0 4px rgba(0, 108, 76, 0.10), 0 8px 18px rgba(0, 108, 76, 0.18);
 }
 
 .appbar .brand-text .title {
@@ -116,6 +122,11 @@ body {
     font-size: 12px;
     color: var(--md-on-surface-variant);
     margin-top: 2px;
+    transition: color 0.18s ease;
+}
+
+.appbar .brand-text .subtitle.easter-note {
+    color: var(--md-primary);
 }
 
 /* 语言切换 */
@@ -204,6 +215,80 @@ body {
 .status-hero .status-meta {
     font-size: 13px;
     opacity: 0.75;
+}
+
+.compact-card .card-body {
+    padding-top: 4px;
+}
+
+.readiness-grid .info-tile .value {
+    font-size: 16px;
+}
+
+.readiness-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.readiness-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--r-sm);
+    background: var(--md-surface-container-low);
+}
+
+.readiness-item strong {
+    display: block;
+    font-size: 13px;
+    color: var(--md-on-surface);
+    margin-bottom: 2px;
+    font-weight: 500;
+}
+
+.readiness-item span {
+    display: block;
+    font-size: 12px;
+    color: var(--md-on-surface-variant);
+}
+
+.readiness-item::before {
+    content: "";
+    flex: 0 0 8px;
+    width: 8px;
+    height: 8px;
+    margin-top: 5px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.readiness-item.ok {
+    color: var(--md-primary);
+}
+
+.readiness-item.warn {
+    color: var(--md-warning);
+}
+
+.readiness-item.danger {
+    color: var(--md-error);
+}
+
+.risk-alert-card {
+    border: 1px solid rgba(186, 26, 26, 0.12);
+}
+
+.risk-alert-card .card-header h2 .icon {
+    color: var(--md-error);
+}
+
+.mono-path {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--md-on-surface-variant);
+    overflow-wrap: anywhere;
 }
 
 /* === 状态徽章 === */
@@ -1122,10 +1207,18 @@ input[type="checkbox"]:not(.toggle-input) {
 /* v2.7.1: 自定义目录权限 */
 .custom-dir-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding: 8px 0;
     border-bottom: 1px solid var(--md-outline-variant);
+}
+.custom-dir-row.invalid {
+    background: var(--md-error-container);
+    border-radius: var(--r-sm);
+    padding: 10px 12px;
+    border-bottom: none;
+    margin-bottom: 6px;
 }
 .custom-dir-row:last-child { border-bottom: none; }
 .custom-dir-row input.dir-path {
@@ -1149,6 +1242,11 @@ input[type="checkbox"]:not(.toggle-input) {
     border-radius: 50%;
     cursor: pointer;
     flex-shrink: 0;
+}
+.custom-dir-error {
+    width: 100%;
+    font-size: 12px;
+    color: var(--md-on-error-container);
 }
 
 /* v3.0.1: 嫌疑模块追踪面板 */

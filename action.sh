@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.0.1 - Action 入口
+# RescueX v3.2.0 - Action 入口
 # 兼容 KernelSU / KsuWebUI / MMRL / Magisk + APatch
 #
 # v3.0.1: WebUI 不可用时显示 CLI 状态信息（参考 BG 的 action.sh）
@@ -29,7 +29,7 @@ is_pkg_installed() {
 # === CLI 状态显示（WebUI 不可用时的回退） ===
 show_cli_status() {
     echo "========================================="
-    echo "   RescueX v3.0.1 - 模块状态"
+    echo "   RescueX v3.2.0 - 模块状态"
     echo "========================================="
     echo ""
 
@@ -113,8 +113,12 @@ show_cli_status() {
     echo "版本号: $(getprop ro.system.build.version.incremental)"
 
     # Root 管理器
-    if [ "$KSU" = "true" ]; then
-        echo "Root: KernelSU ${KSU_VER:-unknown}"
+    if [ "$KSU" = "true" ] || [ -d "/data/adb/ksu" ]; then
+        if pm list packages 2>/dev/null | grep -qi "sukisu"; then
+            echo "Root: SukiSU Ultra ${KSU_VER:-unknown}"
+        else
+            echo "Root: KernelSU ${KSU_VER:-unknown}"
+        fi
     elif [ "$APATCH" = "true" ]; then
         echo "Root: APatch ${APATCH_VER:-unknown}"
     elif [ -d "/data/adb/magisk" ]; then
@@ -161,6 +165,12 @@ if [ "$webui_launched" = "0" ] && [ -d "/data/adb/ksu" ] && is_pkg_installed "me
             break
         fi
     done
+fi
+
+# 4.5 SukiSU Ultra 兼容：沿用 KSU 模块目录，优先尝试通用 deep link
+if [ "$webui_launched" = "0" ] && [ -d "/data/adb/ksu" ] && pm list packages 2>/dev/null | grep -qi "sukisu"; then
+    am start -a android.intent.action.VIEW -d "kernelsu://module/$MODID" 2>/dev/null
+    [ $? -eq 0 ] && webui_launched=1
 fi
 
 # 5. APatch

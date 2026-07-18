@@ -78,13 +78,24 @@ const I18N = {
         snapshots: '快照管理',
         snapshot_desc: '记录当前所有模块的启用/禁用状态，出问题可一键回滚。',
         take_snapshot: '拍快照',
+        restore_baseline: '恢复稳定基线',
         no_snapshots: '暂无快照',
         actions: '手动操作',
         disable_all: '禁用所有模块',
         enable_all: '恢复所有模块',
         test_watchdog: '测试看门狗',
         reboot: '重启设备',
+        generate_decision_report: '生成救援决策报告',
         generate_report: '生成诊断报告',
+        script_risk_title: '高风险脚本拦截',
+        script_risk_badge: '已拦截',
+        script_risk_desc: '检测到疑似擦除/格式化脚本，RescueX 已优先拦截并禁用对应入口。',
+        script_risk_module: '模块',
+        script_risk_reason: '命中规则',
+        script_risk_action: '处理动作',
+        script_risk_time: '检测时间',
+        script_risk_clear: '清除提醒',
+        script_risk_toast: '检测到高风险脚本，已拦截并禁用相关入口',
         logs: '日志与历史',
         log: '日志',
         history: '历史',
@@ -95,7 +106,7 @@ const I18N = {
         about: '关于',
         version: '版本',
         manager: '管理器',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.0 继续整合快照、稳定基线、决策报告与高风险脚本拦截。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -139,6 +150,16 @@ const I18N = {
         snapshot_restored: '快照已恢复，重启后生效',
         snapshot_deleted: '快照已删除',
         snapshot_failed: '操作失败',
+        baseline_restored: '稳定基线已恢复，重启后生效',
+        decision_report_title: '救援决策报告',
+        script_risk_reason_rm_rf: '敏感路径递归删除',
+        script_risk_reason_find_delete: '敏感路径批量删除',
+        script_risk_reason_format: '格式化命令',
+        script_risk_reason_dd: '原始块设备写入',
+        script_risk_reason_wipe: '擦除或格式化调用',
+        script_risk_action_module_disabled: '模块已禁用',
+        script_risk_action_script_blocked: '脚本已锁定',
+        script_risk_cleared: '高风险脚本提醒已清除',
         // 确认对话框
         confirm_title: '确认操作',
         confirm_disable_all: '将禁用除 RescueX 和白名单外的全部模块，重启后生效。是否继续？',
@@ -146,6 +167,7 @@ const I18N = {
         confirm_test_wd: '将启动一个 10 秒短超时看门狗。10 秒后若 boot 未完成将触发救砖（禁用非白名单模块并重启）。建议先开启 DRY_RUN。是否继续？',
         confirm_reboot: '将立即重启设备。RescueX 会在下次启动时检查启动状态。是否继续？',
         confirm_clear: '此操作不可撤销。是否继续？',
+        confirm_restore_baseline: '将按最近一次稳定基线恢复模块启用状态，重启后生效。是否继续？',
         btn_confirm: '确认',
         btn_cancel: '取消',
         // 操作结果
@@ -255,6 +277,42 @@ const I18N = {
         good_modules_saved: '已知良好模块列表已保存',
         suspect_cleared: '嫌疑日志已清除',
         rescue_level_reset: '救砖级别已重置为 0',
+        readiness_title: '救砖就绪度',
+        readiness_baseline: '已知良好基线',
+        readiness_policy: '目录权限策略',
+        readiness_mode: '当前模式',
+        readiness_level: '当前救砖级别',
+        readiness_score_good: '就绪',
+        readiness_score_warn: '关注',
+        readiness_score_danger: '风险',
+        readiness_mode_active: '正式保护',
+        readiness_mode_dry: '演练模式',
+        readiness_policy_clean: '安全',
+        readiness_policy_risky: '待清理',
+        readiness_baseline_missing: '未建立',
+        readiness_baseline_ready: '已建立',
+        readiness_item_baseline_ok_title: '基线已建立',
+        readiness_item_baseline_ok_desc: '成功启动后会用它追踪新增和重新启用的模块。',
+        readiness_item_baseline_missing_title: '缺少已知良好基线',
+        readiness_item_baseline_missing_desc: '先在稳定状态下保存当前模块列表，后续才能精准命中嫌疑模块。',
+        readiness_item_dry_title: '当前处于 DRY_RUN',
+        readiness_item_dry_desc: '此模式只记录动作，适合验证逻辑。',
+        readiness_item_mode_ok_title: '自动救砖已执行',
+        readiness_item_mode_ok_desc: '启动失败达到条件后会实际禁用模块。',
+        readiness_item_policy_ok_title: '目录权限范围安全',
+        readiness_item_policy_ok_desc: '自定义目录限制在 RescueX 自身数据范围内。',
+        readiness_item_policy_risky_title: '检测到历史目录配置超出安全范围',
+        readiness_item_policy_risky_desc: '保存一次目录配置后会自动剔除超出白名单前缀的路径。',
+        readiness_item_fail_warn_title: '失败计数已接近阈值',
+        readiness_item_fail_warn_desc: '建议先拍快照并确认最近变更的模块。',
+        readiness_item_level_warn_title: '当前处于升级救砖级别',
+        readiness_item_level_warn_desc: '最近一轮救砖已经进入更激进的策略。',
+        readiness_item_watchdog_warn_title: '启动中但看门狗未确认存活',
+        readiness_item_watchdog_warn_desc: '建议检查 watchdog.sh 权限和宿主执行环境。',
+        readiness_item_disabled_title: 'RescueX 当前处于禁用状态',
+        readiness_item_disabled_desc: '禁用后不会执行自动救砖。',
+        custom_dir_invalid: '目录不在允许范围内',
+        custom_dir_rejected: '已过滤 N 条超出安全范围的目录配置',
     },
     en: {
         current_status: 'Current Status',
@@ -302,13 +360,24 @@ const I18N = {
         snapshots: 'Snapshots',
         snapshot_desc: 'Record current enable/disable state of all modules. Roll back when something goes wrong.',
         take_snapshot: 'Take Snapshot',
+        restore_baseline: 'Restore Baseline',
         no_snapshots: 'No snapshots yet',
         actions: 'Actions',
         disable_all: 'Disable All',
         enable_all: 'Enable All',
         test_watchdog: 'Test Watchdog',
         reboot: 'Reboot',
+        generate_decision_report: 'Decision Report',
         generate_report: 'Generate Report',
+        script_risk_title: 'Risk Script Blocked',
+        script_risk_badge: 'Blocked',
+        script_risk_desc: 'A destructive wipe or format script was detected. RescueX blocked the entry point first.',
+        script_risk_module: 'Module',
+        script_risk_reason: 'Rule',
+        script_risk_action: 'Action',
+        script_risk_time: 'Detected',
+        script_risk_clear: 'Clear Alert',
+        script_risk_toast: 'High-risk script detected and blocked',
         logs: 'Logs & History',
         log: 'Log',
         history: 'History',
@@ -319,7 +388,7 @@ const I18N = {
         about: 'About',
         version: 'Version',
         manager: 'Manager',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.0.1 adds suspect module tracking, three-level rescue, script directory locking, and APP auto-unfreeze.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.0 continues the snapshot, baseline restore, decision report, and high-risk script interception pass.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -358,12 +427,23 @@ const I18N = {
         snapshot_restored: 'Snapshot restored, effective after reboot',
         snapshot_deleted: 'Snapshot deleted',
         snapshot_failed: 'Operation failed',
+        baseline_restored: 'Known-good baseline restored, effective after reboot',
+        decision_report_title: 'Rescue Decision Report',
+        script_risk_reason_rm_rf: 'Recursive delete on sensitive path',
+        script_risk_reason_find_delete: 'Bulk delete on sensitive path',
+        script_risk_reason_format: 'Format command',
+        script_risk_reason_dd: 'Raw block write',
+        script_risk_reason_wipe: 'Wipe or format invocation',
+        script_risk_action_module_disabled: 'Module disabled',
+        script_risk_action_script_blocked: 'Script blocked',
+        script_risk_cleared: 'Risk script alert cleared',
         confirm_title: 'Confirm',
         confirm_disable_all: 'This will disable all modules except RescueX and whitelisted ones. Effective after reboot. Continue?',
         confirm_enable_all: 'This will remove all disable marks (except RescueX). Continue?',
         confirm_test_wd: 'This will start a 10s short-timeout watchdog. If boot not completed in 10s, rescue will be triggered (disable non-whitelisted modules and reboot). Consider enabling DRY_RUN first. Continue?',
         confirm_reboot: 'Device will reboot immediately. RescueX will check boot status on next boot. Continue?',
         confirm_clear: 'This cannot be undone. Continue?',
+        confirm_restore_baseline: 'Restore module states from the last known-good baseline. Effective after reboot. Continue?',
         btn_confirm: 'Confirm',
         btn_cancel: 'Cancel',
         disabled_count: 'Disabled N modules, effective after reboot',
@@ -466,6 +546,42 @@ const I18N = {
         good_modules_saved: 'Known good module list saved.',
         suspect_cleared: 'Suspect log cleared.',
         rescue_level_reset: 'Rescue level reset to 0.',
+        readiness_title: 'Rescue Readiness',
+        readiness_baseline: 'Known-good baseline',
+        readiness_policy: 'Directory policy',
+        readiness_mode: 'Current mode',
+        readiness_level: 'Current rescue level',
+        readiness_score_good: 'Ready',
+        readiness_score_warn: 'Watch',
+        readiness_score_danger: 'Risk',
+        readiness_mode_active: 'Active',
+        readiness_mode_dry: 'Dry run',
+        readiness_policy_clean: 'Safe',
+        readiness_policy_risky: 'Needs cleanup',
+        readiness_baseline_missing: 'Missing',
+        readiness_baseline_ready: 'Ready',
+        readiness_item_baseline_ok_title: 'Known-good baseline is present',
+        readiness_item_baseline_ok_desc: 'Successful boots can use it to track newly added or re-enabled modules.',
+        readiness_item_baseline_missing_title: 'Known-good baseline is missing',
+        readiness_item_baseline_missing_desc: 'Save the current module list while the device is stable to unlock precise suspect targeting.',
+        readiness_item_dry_title: 'DRY_RUN is active',
+        readiness_item_dry_desc: 'Actions are logged only and the setup stays in rehearsal mode.',
+        readiness_item_mode_ok_title: 'Automatic rescue is active',
+        readiness_item_mode_ok_desc: 'Modules will be disabled when boot failures hit the configured threshold.',
+        readiness_item_policy_ok_title: 'Custom directory scope is safe',
+        readiness_item_policy_ok_desc: 'Directory permissions stay inside RescueX-owned data paths.',
+        readiness_item_policy_risky_title: 'Legacy directory entries exceed the safe scope',
+        readiness_item_policy_risky_desc: 'Save the directory settings once to remove paths outside the allowed prefixes.',
+        readiness_item_fail_warn_title: 'Failure count is close to the threshold',
+        readiness_item_fail_warn_desc: 'Take a snapshot and review recent module changes now.',
+        readiness_item_level_warn_title: 'Rescue escalation level is active',
+        readiness_item_level_warn_desc: 'Recent rescue activity already moved into a more aggressive strategy.',
+        readiness_item_watchdog_warn_title: 'Boot is in progress and watchdog is not confirmed',
+        readiness_item_watchdog_warn_desc: 'Check watchdog.sh permissions and the host execution container.',
+        readiness_item_disabled_title: 'RescueX is disabled',
+        readiness_item_disabled_desc: 'Automatic rescue does not run while the module is disabled.',
+        custom_dir_invalid: 'Path is outside the allowed scope',
+        custom_dir_rejected: 'Filtered N directory entries outside the safe scope',
     }
 };
 
@@ -483,6 +599,18 @@ class RescueXUI {
         this.modulesCache = []; // 模块列表缓存
         this.firstRun = 0;      // v2.5: 首次运行标记（0=已确认，1=首次安装，2=从旧版升级）
         this.onboardingShown = false;
+        this.lastStatus = null;
+        this.goodModuleStats = { enabled: 0, total: 0 };
+        this.rescueLevel = 0;
+        this._customDirs = [];
+        this.scriptRiskAlert = null;
+        this.dashboardSnapshot = null;
+        this.dashboardSnapshotFetchedAt = 0;
+        this.dashboardSnapshotPromise = null;
+        this._easterTapCount = 0;
+        this._easterTapTimer = null;
+        this._easterLangHits = [];
+        this._easterSubtitleTimer = null;
 
         this.init();
     }
@@ -536,6 +664,8 @@ class RescueXUI {
         const helpBtn = this.qs('#btn-help');
         if (helpBtn) helpBtn.addEventListener('click', () => this.showFeatures());
 
+        this.setupEasterEggs();
+
         await this.resolvePaths();
         await this.loadAll();
         this.startAutoRefresh();
@@ -554,6 +684,7 @@ class RescueXUI {
         this.watchdogPidFile = `${this.stateDir}/watchdog_pid`;
         this.snapshotDir = `${this.stateDir}/snapshots`;
         this.customDirsFile = `${this.stateDir}/custom_dirs.conf`;
+        this.scriptRiskAlertFile = `${this.stateDir}/script_risk_alert.conf`;
     }
 
     async resolvePaths() {
@@ -627,21 +758,25 @@ done`;
             const key = el.dataset.i18n;
             el.textContent = this.t(key);
         });
+        this.setDefaultSubtitle();
     }
 
     async switchLang(lang) {
         if (lang === this.lang) return;
+        this.recordLangEasterEgg();
         this.applyLang(lang);
         this.showLoading(true);
         try {
+            const dashboardSnapshot = await this.getDashboardSnapshot({ force: true });
             await Promise.all([
-                this.loadStatus(),
+                this.loadStatus({ snapshot: dashboardSnapshot }),
                 this.loadModules(),
                 this.loadDisabledModules(),
                 this.loadSnapshots(),
-                this.loadStats({ silent: true }),
+                this.loadStats({ silent: true, snapshot: dashboardSnapshot }),
                 this.loadAuditLog(),
-                this.loadBootTrend()
+                this.loadBootTrend(),
+                this.loadScriptRiskAlert()
             ]);
         } finally {
             this.showLoading(false);
@@ -663,6 +798,58 @@ done`;
                 </div>
             </div>
         `;
+    }
+
+    setDefaultSubtitle() {
+        const el = this.qs('#app-subtitle');
+        if (!el) return;
+        el.classList.remove('easter-note');
+        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.0' : 'Automatic Boot Rescue v3.2.0';
+    }
+
+    setupEasterEggs() {
+        const logo = this.qs('.logo-icon');
+        if (logo) {
+            logo.addEventListener('click', () => {
+                this._easterTapCount += 1;
+                clearTimeout(this._easterTapTimer);
+                this._easterTapTimer = setTimeout(() => {
+                    this._easterTapCount = 0;
+                }, 3200);
+                if (this._easterTapCount >= 5) {
+                    this._easterTapCount = 0;
+                    this.triggerLogoEasterEgg();
+                }
+            });
+        }
+    }
+
+    triggerLogoEasterEgg() {
+        const logo = this.qs('.logo-icon');
+        const subtitle = this.qs('#app-subtitle');
+        if (logo) {
+            logo.classList.remove('easter-glow');
+            void logo.offsetWidth;
+            logo.classList.add('easter-glow');
+            setTimeout(() => logo.classList.remove('easter-glow'), 1400);
+        }
+        if (subtitle) {
+            clearTimeout(this._easterSubtitleTimer);
+            subtitle.classList.add('easter-note');
+            subtitle.textContent = this.lang === 'zh' ? '本次启动，先保平安。' : 'Keep this boot clean.';
+            this._easterSubtitleTimer = setTimeout(() => this.setDefaultSubtitle(), 12000);
+        }
+        this.toast(this.lang === 'zh' ? '隐藏巡检模式已点亮' : 'Hidden inspection mode enabled', 'success', 2500);
+    }
+
+    recordLangEasterEgg() {
+        const now = Date.now();
+        this._easterLangHits = this._easterLangHits.filter(ts => now - ts < 4500);
+        this._easterLangHits.push(now);
+        if (this._easterLangHits.length >= 4) {
+            this._easterLangHits = [];
+            this.toast(this.lang === 'zh' ? '双语巡检完成' : 'Bilingual check complete', '', 2200);
+        }
     }
 
     // === 桥接执行（统一 KSU / Magisk v27）===
@@ -747,6 +934,118 @@ done`;
         })[c]);
     }
 
+    getSafeCustomDirPrefixes() {
+        return [
+            '/data/adb/rescuex_data',
+            `${this.stateDir}`,
+            `${this.snapshotDir}`,
+            '/data/local/tmp/RescueX'
+        ].map(p => p.replace(/\/+$/, ''));
+    }
+
+    normalizeCustomDirPath(path) {
+        return String(path || '').trim().replace(/\/+$/, '');
+    }
+
+    isSafeCustomDirPath(path) {
+        const normalized = this.normalizeCustomDirPath(path);
+        if (!normalized.startsWith('/')) return false;
+        if (!normalized || /\s/.test(normalized) || normalized.includes('..')) return false;
+        if (/[*?\[\]]/.test(normalized)) return false;
+        return this.getSafeCustomDirPrefixes().some(prefix => normalized === prefix || normalized.startsWith(`${prefix}/`));
+    }
+
+    renderReadiness() {
+        const list = this.qs('#readiness-list');
+        const scoreEl = this.qs('#readiness-score');
+        if (!list || !scoreEl) return;
+
+        const status = this.lastStatus || {};
+        const goodStats = this.goodModuleStats || { enabled: 0, total: 0 };
+        const entries = this._customDirs || [];
+        const unsafeCount = entries.filter(item => item && item.valid === false).length;
+        const result = status.result || 'UNKNOWN';
+        const failCount = status.failCount || 0;
+        const threshold = parseInt(this.config.REBOOT_THRESHOLD || '3', 10) || 3;
+        const enabled = this.config.ENABLED !== 'false';
+        const dryRun = this.config.DRY_RUN === 'true';
+
+        let score = 100;
+        const items = [];
+        const pushItem = (type, titleKey, descKey) => {
+            items.push({ type, title: this.t(titleKey), desc: this.t(descKey) });
+        };
+
+        if (goodStats.total > 0) {
+            pushItem('ok', 'readiness_item_baseline_ok_title', 'readiness_item_baseline_ok_desc');
+        } else {
+            score -= 30;
+            pushItem('danger', 'readiness_item_baseline_missing_title', 'readiness_item_baseline_missing_desc');
+        }
+
+        if (enabled) {
+            if (dryRun) {
+                score -= 10;
+                pushItem('warn', 'readiness_item_dry_title', 'readiness_item_dry_desc');
+            } else {
+                pushItem('ok', 'readiness_item_mode_ok_title', 'readiness_item_mode_ok_desc');
+            }
+        } else {
+            score -= 45;
+            pushItem('danger', 'readiness_item_disabled_title', 'readiness_item_disabled_desc');
+        }
+
+        if (unsafeCount > 0) {
+            score -= 25;
+            pushItem('danger', 'readiness_item_policy_risky_title', 'readiness_item_policy_risky_desc');
+        } else {
+            pushItem('ok', 'readiness_item_policy_ok_title', 'readiness_item_policy_ok_desc');
+        }
+
+        if (this.scriptRiskAlert && this.scriptRiskAlert.DETECTED === '1') {
+            score -= 35;
+            items.unshift({
+                type: 'danger',
+                title: this.t('script_risk_title'),
+                desc: this.t('script_risk_desc')
+            });
+        }
+
+        if (failCount >= Math.max(1, threshold - 1)) {
+            score -= 20;
+            pushItem('warn', 'readiness_item_fail_warn_title', 'readiness_item_fail_warn_desc');
+        }
+
+        if (this.rescueLevel > 0) {
+            score -= 10 + (this.rescueLevel * 5);
+            pushItem('warn', 'readiness_item_level_warn_title', 'readiness_item_level_warn_desc');
+        }
+
+        if (result === 'BOOTING' && !status.watchdogAlive) {
+            score -= 15;
+            pushItem('warn', 'readiness_item_watchdog_warn_title', 'readiness_item_watchdog_warn_desc');
+        }
+
+        score = Math.max(0, Math.min(100, score));
+        const scoreLabel = score >= 85 ? this.t('readiness_score_good') : (score >= 60 ? this.t('readiness_score_warn') : this.t('readiness_score_danger'));
+        scoreEl.textContent = `${score} ${scoreLabel}`;
+        scoreEl.className = `badge ${score >= 85 ? 'badge-ok' : (score >= 60 ? 'badge-warn' : 'badge-err')}`;
+
+        this.setText('#readiness-baseline', goodStats.total > 0 ? `${this.t('readiness_baseline_ready')} (${goodStats.enabled}/${goodStats.total})` : this.t('readiness_baseline_missing'));
+        this.setText('#readiness-policy', unsafeCount > 0 ? `${this.t('readiness_policy_risky')} (${unsafeCount})` : this.t('readiness_policy_clean'));
+        this.setText('#readiness-mode', enabled ? (dryRun ? this.t('readiness_mode_dry') : this.t('readiness_mode_active')) : this.t('badge_disabled'));
+        this.setText('#readiness-level', this.t(`rescue_level_${Math.min(2, Math.max(0, this.rescueLevel))}`));
+
+        list.innerHTML = items.map(item => `
+            <div class="readiness-item ${item.type}">
+                <div>
+                    <strong>${this.escapeHtml(item.title)}</strong>
+                    <span>${this.escapeHtml(item.desc)}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
     isSafeSnapshotPath(path) {
         if (!path || !path.startsWith(`${this.snapshotDir}/snap-`) || !path.endsWith('.txt')) return false;
         const name = path.slice(this.snapshotDir.length + 1);
@@ -759,18 +1058,20 @@ done`;
         document.body.classList.add('app-loading');
         try {
             await this.loadConfig();
+            const dashboardSnapshot = await this.getDashboardSnapshot({ force: true });
             // v3.0.1 PERF: 并行加载所有面板数据（10个并发请求）
             await Promise.all([
-                this.loadStatus(),
+                this.loadStatus({ snapshot: dashboardSnapshot }),
                 this.loadWhitelist(),
                 this.loadModules(),
                 this.loadDisabledModules(),
                 this.loadSnapshots(),
-                this.loadStats(),
+                this.loadStats({ snapshot: dashboardSnapshot }),
                 this.loadAuditLog(),
                 this.loadCustomDirs(),
                 this.loadSuspectModules(),
-                this.loadRescueLevel()
+                this.loadRescueLevel(),
+                this.loadScriptRiskAlert()
             ]);
             // v3.0.1 PERF: 日志、历史、趋势图、管理器检测也并行
             await Promise.all([
@@ -779,12 +1080,83 @@ done`;
                 this.loadBootTrend(),
                 this.detectManager()
             ]);
+            this.renderReadiness();
         } catch (e) {
             this.toast(this.t('loading_failed'), 'error');
         } finally {
             document.body.classList.remove('app-loading');
             this.showLoading(false);
         }
+    }
+
+    scriptRiskReasonLabel(reason) {
+        const map = {
+            'rm-rf-sensitive-path': this.t('script_risk_reason_rm_rf'),
+            'find-delete-sensitive-path': this.t('script_risk_reason_find_delete'),
+            'format-command': this.t('script_risk_reason_format'),
+            'raw-block-write': this.t('script_risk_reason_dd'),
+            'wipe-or-format-invocation': this.t('script_risk_reason_wipe')
+        };
+        return map[String(reason || '').trim()] || (reason || '--');
+    }
+
+    scriptRiskActionLabel(action) {
+        const map = {
+            'module-disabled': this.t('script_risk_action_module_disabled'),
+            'script-blocked': this.t('script_risk_action_script_blocked')
+        };
+        return map[String(action || '').trim()] || (action || '--');
+    }
+
+    async loadScriptRiskAlert() {
+        try {
+            const raw = await this.exec(`cat "${this.scriptRiskAlertFile}" 2>/dev/null`);
+            if (!raw || !raw.includes('DETECTED=')) {
+                this.scriptRiskAlert = null;
+                this.renderScriptRiskAlert();
+                this.renderReadiness();
+                return;
+            }
+            this.scriptRiskAlert = this.parseKV(raw);
+            this.renderScriptRiskAlert();
+            this.renderReadiness();
+        } catch (e) {
+            this.scriptRiskAlert = null;
+            this.renderScriptRiskAlert();
+            this.renderReadiness();
+        }
+    }
+
+    renderScriptRiskAlert() {
+        const card = this.qs('#script-risk-card');
+        if (!card) return;
+        const alert = this.scriptRiskAlert;
+        if (!alert || alert.DETECTED !== '1') {
+            card.classList.add('hidden');
+            return;
+        }
+        card.classList.remove('hidden');
+        this.setText('#script-risk-module', alert.MODULE_ID || '--');
+        this.setText('#script-risk-reason', this.scriptRiskReasonLabel(alert.REASON));
+        this.setText('#script-risk-action', this.scriptRiskActionLabel(alert.ACTION));
+        this.setText('#script-risk-time', alert.DETECTED_AT ? this.formatTimeValue(alert.DETECTED_AT) : '--');
+        this.setText('#script-risk-path', alert.SCRIPT_PATH || '--');
+
+        const seenKey = `rescuex_seen_risk_${alert.DETECTED_AT || '0'}_${alert.MODULE_ID || 'unknown'}`;
+        try {
+            if (!localStorage.getItem(seenKey)) {
+                localStorage.setItem(seenKey, '1');
+                this.toast(this.t('script_risk_toast'), 'error', 5000);
+            }
+        } catch (_) {}
+    }
+
+    formatTimeValue(value) {
+        const text = String(value || '').trim();
+        if (/^[0-9]+$/.test(text)) {
+            return this.formatTime(parseInt(text, 10));
+        }
+        return text || '--';
     }
 
     async loadConfig() {
@@ -831,37 +1203,37 @@ done`;
         this.setVal('#cfg-watchdog-poll', 2);
     }
 
-    async loadStatus() {
-        try {
-            // v3.0.1 PERF FIX: 将 6 个顺序 exec() 合并为 1 个 shell 命令
-            // 原实现每次 exec() 调用耗时约 0.5-1 秒，6 次顺序调用 = 3-6 秒延迟
-            // 合并后仅需 1 次 RPC 调用，加载延迟降至 ~1 秒
-            const script = `cat "${this.statusFile}" 2>/dev/null
-echo "---RX_SEPARATOR---"
-echo "AUDIT_COUNT=$(wc -l < "${this.stateDir}/rescue_audit.log" 2>/dev/null || echo 0)"
-echo "PATCH_FLAG=$(cat "${this.stateDir}/patch_update_flag" 2>/dev/null || echo 0)"
-echo "PATCH_FAIL_COUNT=$(cat "${this.stateDir}/patch_fail_count" 2>/dev/null || echo 0)"
-echo "WD_PID=$(cat "${this.watchdogPidFile}" 2>/dev/null || echo 0)"
-WD_PID_VAL=$(cat "${this.watchdogPidFile}" 2>/dev/null || echo 0)
-if [ -n "$WD_PID_VAL" ] && echo "$WD_PID_VAL" | grep -qE '^[0-9]+$'; then
-  if kill -0 "$WD_PID_VAL" 2>/dev/null; then
-    WD_CMD=$(cat "/proc/$WD_PID_VAL/cmdline" 2>/dev/null | tr '\\0' ' ')
-    if echo "$WD_CMD" | grep -q 'watchdog\\|rescue'; then
-      echo "WD_STATUS=alive_ours"
-    else
-      echo "WD_STATUS=alive_other"
-    fi
-  else
-    echo "WD_STATUS=dead"
-  fi
-else
-  echo "WD_STATUS=nopid"
-fi`;
+    async getDashboardSnapshot(options = {}) {
+        const force = !!options.force;
+        const now = Date.now();
+        if (!force && this.dashboardSnapshot && (now - this.dashboardSnapshotFetchedAt) < 1500) {
+            return this.dashboardSnapshot;
+        }
+        if (!force && this.dashboardSnapshotPromise) {
+            return this.dashboardSnapshotPromise;
+        }
+        const script = `MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null
+get_dashboard_snapshot`;
+        this.dashboardSnapshotPromise = (async () => {
             const raw = await this.exec(script, EXEC_DEFAULT_TIMEOUT_MS);
-            // Split by separator: first part is boot_status, second part is extra fields
-            const parts = raw.split('---RX_SEPARATOR---');
-            const s = this.parseKV(parts[0] || '');
-            const extra = this.parseKV(parts[1] || '');
+            const parsed = this.parseKV(raw || '');
+            this.dashboardSnapshot = parsed;
+            this.dashboardSnapshotFetchedAt = Date.now();
+            return parsed;
+        })();
+        try {
+            return await this.dashboardSnapshotPromise;
+        } finally {
+            this.dashboardSnapshotPromise = null;
+        }
+    }
+
+    async loadStatus(options = {}) {
+        try {
+            const snap = options.snapshot || await this.getDashboardSnapshot({ force: !!options.force });
+            const s = snap;
+            const extra = snap;
+            const stats = snap;
 
             const result = s.LAST_BOOT_RESULT || 'UNKNOWN';
             const badge = this.qs('#status-badge');
@@ -921,10 +1293,8 @@ fi`;
                 this.setText('#info-boot-duration', '--');
             }
 
-            // 审计日志兜底
-            const rescueCount = parseInt(s.RESCUE_COUNT) || 0;
-            const auditCount = parseInt(extra.AUDIT_COUNT) || 0;
-            this.setText('#info-rescue-count', Math.max(rescueCount, auditCount));
+            const rescueCount = parseInt(stats.RESCUED) || parseInt(s.RESCUE_COUNT) || 0;
+            this.setText('#info-rescue-count', rescueCount);
 
             // 看门狗状态（从合并命令结果中读取，无需额外 exec）
             const wdPid = extra.WD_PID || '';
@@ -945,6 +1315,14 @@ fi`;
 
             const failEl = this.qs('#info-fail-count');
             failEl.className = 'value' + (failCount >= threshold ? ' danger' : (failCount > 0 ? ' warn' : ' ok'));
+
+            this.lastStatus = {
+                result,
+                failCount,
+                watchdogAlive: wdStatus === 'alive_ours',
+                patchDetected: s.PATCH_DETECTED === 'true' || extra.PATCH_FLAG === '1'
+            };
+            this.renderReadiness();
         } catch (e) {
             console.error('loadStatus failed:', e);
         }
@@ -1134,25 +1512,8 @@ done`;
 
     async takeSnapshot() {
         try {
-            // 调用 shell 实现快照
-            const script = `mkdir -p "${this.snapshotDir}"
-snap="${this.snapshotDir}/snap-\$(date +%Y%m%d-%H%M%S).txt"
-{
-  echo "# RescueX snapshot \$(date)"
-  for base in ${this.moduleBases.join(' ')}; do
-    [ -d "\$base" ] || continue
-    for d in "\$base"/*/; do
-      [ -d "\$d" ] || continue
-      m=\$(basename "\$d")
-      [ "\$m" = "${this.selfId}" ] && continue
-      case "\$m" in *[!A-Za-z0-9._-]*) continue ;; esac
-      if [ -f "\$d/disable" ]; then echo "\$m=disabled"; else echo "\$m=enabled"; fi
-    done
-  done
-} > "\$snap"
-echo "OK:\$snap"`;
-            const result = await this.exec(script);
-            if (result.includes('OK:')) {
+            const result = await this.exec(`MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null && manual_take_snapshot manual`);
+            if (result.trim()) {
                 this.toast(this.t('snapshot_taken'), 'success');
                 this.loadSnapshots();
             } else {
@@ -1173,23 +1534,10 @@ echo "OK:\$snap"`;
         );
         if (!confirm) return;
         try {
-            const script = `MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null
-[ -f "${snapFile}" ] || exit 1
-while IFS='=' read -r mid state; do
-  [ -z "\$mid" ] && continue
-  case "\$mid" in \\#*) continue;; esac
-  case "\$mid" in *[!A-Za-z0-9._-]*) continue;; esac
-  for base in ${this.moduleBases.join(' ')}; do
-    [ -d "\$base/\$mid" ] || continue
-    if [ "\$state" = "enabled" ]; then rm -f "\$base/\$mid/disable"; else touch "\$base/\$mid/disable"; fi
-    break
-  done
-done < "${snapFile}"
-echo OK`;
-            const result = await this.exec(script);
+            const result = await this.exec(`MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null && manual_restore_snapshot "${snapFile}"`);
             if (result.includes('OK')) {
                 this.toast(this.t('snapshot_restored'), 'success');
-                this.loadDisabledModules();
+                await Promise.all([this.loadDisabledModules(), this.loadSuspectModules()]);
             } else {
                 this.toast(this.t('snapshot_failed'), 'error');
             }
@@ -1208,11 +1556,47 @@ echo OK`;
         );
         if (!confirm) return;
         try {
-            await this.exec(`rm -f "${snapFile}"`);
+            await this.exec(`MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null && manual_delete_snapshot "${snapFile}"`);
             this.toast(this.t('snapshot_deleted'), 'success');
             this.loadSnapshots();
         } catch (e) {
             this.toast(this.t('snapshot_failed'), 'error');
+        }
+    }
+
+    async restoreBaseline() {
+        const confirm = await this.confirmDialog(
+            this.t('confirm_title'),
+            this.t('confirm_restore_baseline'),
+            this.t('btn_confirm'), 'btn-filled'
+        );
+        if (!confirm) return;
+        try {
+            const result = await this.exec(`MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null && manual_restore_good_modules_baseline`);
+            if (result.includes('CHANGED=')) {
+                this.toast(this.t('baseline_restored'), 'success');
+                await Promise.all([this.loadDisabledModules(), this.loadSuspectModules(), this.loadRescueLevel()]);
+            } else {
+                this.toast(this.t('snapshot_failed'), 'error');
+            }
+        } catch (e) {
+            this.toast(this.t('snapshot_failed'), 'error');
+        }
+    }
+
+    async clearScriptRiskAlert() {
+        try {
+            const result = await this.exec(`MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null && manual_clear_script_risk_alert`);
+            if (!/ALERT_CLEARED=1|ALERT_ALREADY_CLEAR=1/.test(result)) {
+                this.toast(this.t('save_failed'), 'error');
+                return;
+            }
+            this.scriptRiskAlert = null;
+            this.renderScriptRiskAlert();
+            this.renderReadiness();
+            this.toast(this.t('script_risk_cleared'), 'success');
+        } catch (e) {
+            this.toast(this.t('save_failed'), 'error');
         }
     }
 
@@ -1301,7 +1685,7 @@ mv config.conf.tmp.$$ config.conf
             const configRaw = await this.exec(`cat "${this.confFile}" 2>/dev/null`);
             const whitelistRaw = await this.exec(`cat "${this.whitelistFile}" 2>/dev/null`);
             const data = {
-                version: '3.0.1',
+                version: '3.2.0',
                 exported_at: new Date().toISOString(),
                 config: this.parseKV(configRaw),
                 whitelist: whitelistRaw
@@ -1539,8 +1923,8 @@ done`;
 
     // v2.4: 手动设置/清除补丁更新标记
     async togglePatchFlag() {
-        const current = await this.exec(`cat "${this.stateDir}/patch_update_flag" 2>/dev/null`);
-        if (current === '1') {
+            const current = await this.exec(`cat "${this.stateDir}/patch_update_flag" 2>/dev/null`);
+            if (current === '1') {
             // 清除标记
             const confirm = await this.confirmDialog(
                 this.lang === 'zh' ? '清除补丁标记' : 'Clear Patch Flag',
@@ -1548,11 +1932,11 @@ done`;
                     ? '将清除补丁更新标记和补丁失败计数。通常在系统更新成功后自动清除。是否继续？'
                     : 'Will clear patch update flag and patch fail count. Usually auto-cleared on successful boot. Continue?',
                 this.t('btn_confirm'), 'btn-filled'
-            );
-            if (!confirm) return;
-            await this.exec(`rm -f "${this.stateDir}/patch_update_flag" && echo 0 > "${this.stateDir}/patch_fail_count"`);
-            this.toast(this.lang === 'zh' ? '补丁标记已清除' : 'Patch flag cleared', 'success');
-        } else {
+                );
+                if (!confirm) return;
+                await this.exec(`. "${this.basePath}/common.sh" && manual_clear_patch_flag`);
+                this.toast(this.lang === 'zh' ? '补丁标记已清除' : 'Patch flag cleared', 'success');
+            } else {
             // 设置标记
             const confirm = await this.confirmDialog(
                 this.lang === 'zh' ? '设置补丁标记' : 'Set Patch Flag',
@@ -1560,12 +1944,12 @@ done`;
                     ? '将手动设置补丁更新标记。下次启动时 RescueX 会使用补丁专属超时（默认 180 秒），失败时只回滚补丁不清整机。适用于手动系统更新、刷入 Magisk 模块后重启等场景。是否继续？'
                     : 'Will manually set patch update flag. Next boot will use patch-specific timeout (default 180s), and failures will only roll back patches, not wipe data. Use for manual system updates, flashing Magisk modules, etc. Continue?',
                 this.t('btn_confirm'), 'btn-filled'
-            );
-            if (!confirm) return;
-            await this.exec(`echo 1 > "${this.stateDir}/patch_update_flag"`);
-            this.toast(this.lang === 'zh' ? '补丁标记已设置，重启后生效' : 'Patch flag set, effective after reboot', 'success');
-        }
-        this.loadStatus();
+                );
+                if (!confirm) return;
+                await this.exec(`. "${this.basePath}/common.sh" && set_patch_flag`);
+                this.toast(this.lang === 'zh' ? '补丁标记已设置，重启后生效' : 'Patch flag set, effective after reboot', 'success');
+            }
+            this.loadStatus();
     }
 
     async testWatchdog() {
@@ -1616,7 +2000,7 @@ generate_report`;
                     : 'Report failed: timeout or common.sh unreachable, check module path', 'error', 6000);
                 return;
             }
-            this.showReportModal(report);
+            this.showTextModal(this.t('report_title'), report);
         } catch (e) {
             // v2.6.0 F-BUG-8: catch 块输出详细错误到 console 便于排障
             console.warn('[RescueX] generateReport error:', e);
@@ -1627,7 +2011,24 @@ generate_report`;
         this.showLoading(false);
     }
 
-    showReportModal(report) {
+    async generateDecisionReport() {
+        this.showLoading(true);
+        this.toast(this.lang === 'zh' ? '生成中...' : 'Generating...', '', 60000);
+        try {
+            const report = await this.exec(`MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null
+manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
+            if (!report) {
+                this.toast(this.t('snapshot_failed'), 'error', 6000);
+                return;
+            }
+            this.showTextModal(this.t('decision_report_title'), report);
+        } catch (e) {
+            this.toast(this.t('snapshot_failed'), 'error', 6000);
+        }
+        this.showLoading(false);
+    }
+
+    showTextModal(title, report) {
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         const modal = document.createElement('div');
@@ -1635,7 +2036,7 @@ generate_report`;
         modal.style.maxWidth = '560px';
 
         const h3 = document.createElement('h3');
-        h3.textContent = this.t('report_title');
+        h3.textContent = title;
 
         const pre = document.createElement('pre');
         pre.className = 'log-view';
@@ -1748,7 +2149,7 @@ generate_report`;
     }
 
     async detectManager() {
-        const out = await this.exec(`[ -d /data/adb/ksu ] && echo KSU ; [ -d /data/adb/ap ] && echo APatch ; [ -d /data/adb/magisk ] && echo Magisk`);
+        const out = await this.exec(`[ -d /data/adb/ksu ] && if pm list packages 2>/dev/null | grep -qi sukisu; then if pm list packages 2>/dev/null | grep -q "com.dergoogler.mmrl\|com.dergoogler.mmrl.wx"; then echo "SukiSU Ultra (MMRL)"; else echo "SukiSU Ultra"; fi; else if pm list packages 2>/dev/null | grep -q "com.dergoogler.mmrl\|com.dergoogler.mmrl.wx"; then echo "KSU (MMRL)"; else echo KSU; fi; fi ; [ -d /data/adb/ap ] && echo APatch ; [ -d /data/adb/magisk ] && echo Magisk`);
         const managers = out.split('\n').filter(Boolean);
         this.setText('#info-manager', managers.join(' / ') || (this.lang === 'zh' ? '未知' : 'Unknown'));
     }
@@ -1762,19 +2163,24 @@ generate_report`;
 
     startAutoRefresh() {
         if (this.refreshTimer) clearInterval(this.refreshTimer);
-        this.refreshTimer = setInterval(() => {
+        this.refreshTimer = setInterval(async () => {
             if (!this.isLoading) {
-                this.loadStatus();
+                let dashboardSnapshot = null;
+                try {
+                    dashboardSnapshot = await this.getDashboardSnapshot({ force: true });
+                } catch (_) {}
+                this.loadStatus(dashboardSnapshot ? { snapshot: dashboardSnapshot } : {});
                 // 日志 Tab 也自动刷新（频率较低）
                 if (this.currentTab === 'log') this.loadLog();
                 // v2.5: 统计面板每 ~30 秒刷新一次（每 6 个周期）
                 this._statsCounter = (this._statsCounter || 0) + 1;
                 if (this._statsCounter >= 6) {
-                    this.loadStats({ silent: true });
+                    this.loadStats(dashboardSnapshot ? { silent: true, snapshot: dashboardSnapshot } : { silent: true });
                     this.loadAuditLog();
                     this.loadBootTrend();
                     this.loadSuspectModules();
                     this.loadRescueLevel();
+                    this.loadScriptRiskAlert();
                     this._statsCounter = 0;
                 }
             }
@@ -1961,7 +2367,7 @@ generate_report`;
             overlay.remove();
             // 升级用户额外提示查看新功能
             if (this.firstRun === 2) {
-                this.toast(this.lang === 'zh' ? '欢迎升级到 v3.0.1！' : 'Welcome to v3.0.1!', 'success');
+                this.toast(this.lang === 'zh' ? '欢迎升级到 v3.1.1 Beta！' : 'Welcome to v3.1.1 Beta!', 'success');
             }
         };
         ackBtn.onclick = ack;
@@ -1975,13 +2381,10 @@ generate_report`;
     // === v2.5: 启动统计面板 ===
     async loadStats(options = {}) {
         try {
-            const script = `MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null
-compute_boot_stats`;
-            const out = await this.exec(script, EXEC_STATS_TIMEOUT_MS);
-            if (!out || !out.includes('TOTAL=')) {
+            const stats = options.snapshot || await this.getDashboardSnapshot({ force: !!options.force });
+            if (!stats || typeof stats.TOTAL === 'undefined') {
                 throw new Error('invalid stats output');
             }
-            const stats = this.parseKV(out);
             const total = parseInt(stats.TOTAL) || 0;
             const success = parseInt(stats.SUCCESS) || 0;
             const rescued = parseInt(stats.RESCUED) || 0;
@@ -2449,11 +2852,15 @@ compute_boot_stats`;
             if (raw && raw.trim()) {
                 raw.trim().split('\n').forEach(line => {
                     const parts = line.trim().split(/\s+/);
-                    if (parts.length >= 2) entries.push({ path: parts[0], perms: parts[1] });
+                    if (parts.length >= 2) {
+                        const path = this.normalizeCustomDirPath(parts[0]);
+                        entries.push({ path, perms: parts[1], valid: this.isSafeCustomDirPath(path) });
+                    }
                 });
             }
             this._customDirs = entries;
             this._renderCustomDirs();
+            this.renderReadiness();
         } catch (e) {
             console.warn('loadCustomDirs failed:', e);
         }
@@ -2469,7 +2876,7 @@ compute_boot_stats`;
         }
         let html = '';
         entries.forEach((e, i) => {
-            html += `<div class="custom-dir-row">
+            html += `<div class="custom-dir-row${e.valid === false ? ' invalid' : ''}">
                 <input type="text" class="dir-path" value="${this.escapeHtml(e.path)}" placeholder="${this.t('dir_path')}">
                 <select class="dir-perms">
                     <option value="770" ${e.perms === '770' ? 'selected' : ''}>770</option>
@@ -2478,6 +2885,7 @@ compute_boot_stats`;
                     <option value="750" ${e.perms === '750' ? 'selected' : ''}>750</option>
                 </select>
                 <button class="btn-icon-del" data-action="removeCustomDir" data-index="${i}">&times;</button>
+                ${e.valid === false ? `<div class="custom-dir-error">${this.escapeHtml(this.t('custom_dir_invalid'))}</div>` : ''}
             </div>`;
         });
         el.innerHTML = html;
@@ -2485,7 +2893,7 @@ compute_boot_stats`;
 
     addCustomDir() {
         if (!this._customDirs) this._customDirs = [];
-        this._customDirs.push({ path: '', perms: '770' });
+        this._customDirs.push({ path: '', perms: '770', valid: true });
         this._renderCustomDirs();
     }
 
@@ -2502,24 +2910,31 @@ compute_boot_stats`;
         rows.forEach(row => {
             const pathInput = row.querySelector('.dir-path');
             const permsSelect = row.querySelector('.dir-perms');
-            const path = (pathInput && pathInput.value || '').trim();
+            const path = this.normalizeCustomDirPath((pathInput && pathInput.value) || '');
             const perms = permsSelect ? permsSelect.value : '770';
             if (path) entries.push(`${path} ${perms}`);
         });
         this._customDirs = entries.map(e => {
             const parts = e.split(/\s+/);
-            return { path: parts[0], perms: parts[1] || '770' };
+            const path = this.normalizeCustomDirPath(parts[0]);
+            return { path, perms: parts[1] || '770', valid: this.isSafeCustomDirPath(path) };
         });
+        const invalid = this._customDirs.filter(e => e.valid === false).length;
         try {
-            const content = entries.join('\n') || '';
-            const b64 = utf8ToBase64(content);
+            const safeEntries = this._customDirs.filter(e => e.valid).map(e => `${e.path} ${e.perms}`);
+            const content = safeEntries.join('\n') || '';
+            const b64 = utf8ToBase64(content + (content ? '\n' : ''));
             if (!/^[A-Za-z0-9+/=]*$/.test(b64)) {
                 this.toast(this.t('save_failed'), 'error');
                 return;
             }
-            const result = await this.exec(`printf '%s' '${b64}' | base64 -d > "${this.customDirsFile}" && echo OK`);
-            if (result.includes('OK')) {
+            const result = await this.exec(`TMP_FILE="${this.stateDir}/.custom_dirs.upload.$$" && printf '%s' '${b64}' | base64 -d > "$TMP_FILE" && . "${this.basePath}/common.sh" && save_custom_dirs_file "$TMP_FILE" && rm -f "$TMP_FILE"`);
+            if (result.includes('SAVED=')) {
                 this.toast(this.t('saved'), 'success');
+                if (invalid > 0) {
+                    this.toast(this.t('custom_dir_rejected').replace('N', String(invalid)), 'warn', 5000);
+                }
+                await this.loadCustomDirs();
             } else {
                 this.toast(this.t('save_failed'), 'error');
             }
@@ -2531,7 +2946,7 @@ compute_boot_stats`;
     // === v2.7: 启动耗时趋势 ===
     async loadBootTrend() {
         try {
-            const raw = await this.exec(`cat "${this.historyFile}" 2>/dev/null | grep SERVICE | tail -n 10`, EXEC_DEFAULT_TIMEOUT_MS);
+            const raw = await this.exec(`cat "${this.historyFile}" 2>/dev/null | grep SERVICE | tail -n 9`, EXEC_DEFAULT_TIMEOUT_MS);
             const el = this.qs('#boot-trend');
             if (!el) return;
             if (!raw || raw.trim() === '') {
@@ -2577,13 +2992,16 @@ compute_boot_stats`;
     // === v3.0.1: 嫌疑模块追踪面板 ===
     async loadSuspectModules() {
         try {
-            // Load good modules: count only enabled (no ':' prefix = known good)
-            const enabledRaw = await this.exec(`grep -cv '^:' "${this.stateDir}/good_modules.list" 2>/dev/null || echo 0`);
-            const enabledCount = parseInt(enabledRaw) || 0;
-            // Total recorded modules (all lines including disabled prefix)
-            const totalRaw = await this.exec(`wc -l < "${this.stateDir}/good_modules.list" 2>/dev/null || echo 0`);
-            const totalCount = parseInt(totalRaw) || 0;
+            const modulesRaw = await this.exec(`. "${this.basePath}/common.sh" && list_all_modules | cut -d'|' -f1,2`, EXEC_DEFAULT_TIMEOUT_MS);
+            const currentModules = modulesRaw.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+                const parts = line.split('|');
+                return { id: parts[0], enabled: parts[1] === '1' };
+            }).filter(item => item.id);
+            const currentModuleIds = new Set(currentModules.map(item => item.id));
+            const enabledCount = currentModules.filter(item => item.enabled).length;
+            const totalCount = currentModules.length;
             this.setText('#info-good-modules', enabledCount);
+            this.goodModuleStats = { enabled: enabledCount, total: totalCount };
 
             // Load suspect log
             const suspectRaw = await this.exec(`cat "${this.stateDir}/suspect_modules.log" 2>/dev/null`);
@@ -2593,10 +3011,14 @@ compute_boot_stats`;
             if (!suspectRaw || suspectRaw.trim() === '' || suspectRaw.trim().startsWith('#')) {
                 el.innerHTML = `<div class="empty-state">${totalCount > 0 ? (this.lang === 'zh' ? '暂无嫌疑记录（已知良好模块已建立）' : 'No suspects (good module list is established)') : this.t('loading')}</div>`;
                 this.setText('#info-suspect-count', 0);
+                this.renderReadiness();
                 return;
             }
 
-            const suspects = suspectRaw.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+            const suspects = suspectRaw.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).filter(line => {
+                const clean = line.replace(/^[?+:]/, '').trim();
+                return clean && currentModuleIds.has(clean);
+            });
             const certain = suspects.filter(s => !s.startsWith('?') && !s.startsWith('+'));
             const stateChanged = suspects.filter(s => s.startsWith('+'));
             const uncertain = suspects.filter(s => s.startsWith('?'));
@@ -2605,6 +3027,7 @@ compute_boot_stats`;
 
             if (suspects.length === 0) {
                 el.innerHTML = `<div class="empty-state">${this.lang === 'zh' ? '无嫌疑模块' : 'No suspect modules'}</div>`;
+                this.renderReadiness();
                 return;
             }
 
@@ -2634,6 +3057,7 @@ compute_boot_stats`;
                 </div>`;
             });
             el.innerHTML = html;
+            this.renderReadiness();
         } catch (e) {
             console.warn('loadSuspectModules failed:', e);
         }
@@ -2660,6 +3084,8 @@ compute_boot_stats`;
 
             badge.textContent = levelLabels[level] || this.t('rescue_level_label');
             badge.className = `badge ${levelClasses[level] || 'badge-info'}`;
+            this.rescueLevel = level;
+            this.renderReadiness();
         } catch (e) {
             console.warn('loadRescueLevel failed:', e);
         }
@@ -2667,37 +3093,10 @@ compute_boot_stats`;
 
     async saveGoodModules() {
         try {
-            // Build script that enumerates ALL modules (same logic as common.sh save_good_modules)
-            // Enabled modules: "modname", Disabled modules: ":modname"
-            const basesStr = this.moduleBases.join(' ');
-            const script = `GOOD_LIST="${this.stateDir}/good_modules.list"
-TMP_LIST="\${GOOD_LIST}.tmp"
-rm -f "\$TMP_LIST"
-for base in ${basesStr}; do
-  [ -d "\$base" ] || continue
-  for d in "\$base"/*/; do
-    [ -d "\$d" ] || continue
-    [ -f "\$d/remove" ] && continue
-    m=\$(basename "\$d")
-    [ "\$m" = "${this.selfId}" ] && continue
-    case "\$m" in *[!A-Za-z0-9._-]*) continue ;; esac
-    if [ -f "\$d/disable" ]; then
-      echo ":\$m" >> "\$TMP_LIST"
-    else
-      echo "\$m" >> "\$TMP_LIST"
-    fi
-  done
-done
-if [ -f "\$TMP_LIST" ]; then
-  mv -f "\$TMP_LIST" "\$GOOD_LIST"
-  grep -cv '^:' "\$GOOD_LIST" 2>/dev/null || echo 0
-else
-  echo "0"
-fi`;
-            const result = await this.exec(script);
+            const result = await this.exec(`. "${this.basePath}/common.sh" && manual_save_good_modules`);
             if (result) {
                 this.toast(this.t('good_modules_saved') + (result !== '0' ? ` (${result})` : ''), 'success');
-                await this.loadSuspectModules();
+                await Promise.all([this.loadSuspectModules(), this.loadRescueLevel()]);
             } else {
                 this.toast(this.t('save_failed'), 'error');
             }
@@ -2708,7 +3107,7 @@ fi`;
 
     async clearSuspectLog() {
         try {
-            await this.exec(`rm -f "${this.stateDir}/suspect_modules.log"`);
+            await this.exec(`. "${this.basePath}/common.sh" && clear_suspect_log`);
             this.toast(this.t('suspect_cleared'), 'success');
             await this.loadSuspectModules();
         } catch (e) {
@@ -2718,7 +3117,7 @@ fi`;
 
     async resetRescueLevel() {
         try {
-            await this.exec(`echo 0 > "${this.stateDir}/rescue_level"`);
+            await this.exec(`. "${this.basePath}/common.sh" && reset_rescue_level_state`);
             this.toast(this.t('rescue_level_reset'), 'success');
             await this.loadRescueLevel();
         } catch (e) {
@@ -2736,19 +3135,7 @@ fi`;
         if (!confirm) return;
         this.showLoading(true);
         try {
-            const script = `UNFREEZE_DONE=0
-if [ -f /data/system/users/0/package-restrictions.xml ]; then
-  rm -f /data/system/users/0/package-restrictions.xml 2>/dev/null && UNFREEZE_DONE=1
-fi
-for d in /data/system/users/*/; do
-  [ -d "\$d" ] || continue
-  f="\${d}package-restrictions.xml"
-  [ -f "\$f" ] && rm -f "\$f" 2>/dev/null && UNFREEZE_DONE=1
-done
-[ -f /data/system/users/0/package-restrictions.xml.backup ] && rm -f /data/system/users/0/package-restrictions.xml.backup 2>/dev/null
-sync
-[ "\$UNFREEZE_DONE" = "1" ] && echo "DONE" || echo "SKIP"`;
-            const result = await this.exec(script);
+            const result = await this.exec(`. "${this.basePath}/common.sh" && manual_unfreeze_apps`);
             if (result.includes('DONE')) {
                 this.toast(this.t('unfreeze_done'), 'success');
             } else {
@@ -2770,12 +3157,7 @@ sync
         if (!confirm) return;
         this.showLoading(true);
         try {
-            const script = `LOCKED=0
-for dir in /data/adb/service.d /data/adb/post-fs-data.d /data/adb/post-mount.d /data/adb/boot-completed.d; do
-  [ -d "\$dir" ] && chmod 000 "\$dir"/* 2>/dev/null && LOCKED=\$((LOCKED + 1))
-done
-echo "LOCKED=\$LOCKED"`;
-            const result = await this.exec(script);
+            const result = await this.exec(`. "${this.basePath}/common.sh" && manual_lock_script_dirs`);
             this.toast(this.t('lock_scripts_done'), 'success');
         } catch (e) {
             this.toast(this.t('save_failed'), 'error');

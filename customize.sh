@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.0.1 - customize.sh
+# RescueX v3.2.0 - customize.sh
 
 # v3.0.1 改进（专业级升级）：
 # - 三级渐进式救砖支持
@@ -8,7 +8,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.0.1"
+RX_VERSION="v3.2.0"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -46,7 +46,11 @@ ui_print "- 设备型号: ${MODEL:-Unknown}"
 # === 检测管理器类型 ===
 MANAGER="unknown"
 if [ -d "/data/adb/ksu" ]; then
-    MANAGER="kernelsu"
+    if pm list packages 2>/dev/null | grep -qi "sukisu"; then
+        MANAGER="sukisuultra"
+    else
+        MANAGER="kernelsu"
+    fi
 elif [ -d "/data/adb/ap" ]; then
     MANAGER="apatch"
 elif [ -d "/data/adb/magisk" ]; then
@@ -104,7 +108,7 @@ if [ -n "$OLD_STATE_DIR" ]; then
     # 快照迁移
     if [ -d "$OLD_STATE_DIR/snapshots" ]; then
         snap_count=0
-        for snap in "$OLD_STATE_DIR/snapshots"/*.txt; do
+        for snap in "$OLD_STATE_DIR/snapshots"/snap-*.txt "$OLD_STATE_DIR/snapshots"/auto-snap-*.txt; do
             [ -f "$snap" ] || continue
             snap_name=$(basename "$snap")
             if [ ! -f "$SNAPSHOT_DIR/$snap_name" ]; then
@@ -127,7 +131,7 @@ if [ "$CONFIG_PRESERVED" != "true" ] && [ -d "$PERSIST_DIR" ]; then
     [ -f "$PERSIST_DIR/rescue_audit.log" ] && cp "$PERSIST_DIR/rescue_audit.log" "$STATE_DIR/rescue_audit.log" 2>/dev/null
     [ -f "$PERSIST_DIR/good_modules.list" ] && cp "$PERSIST_DIR/good_modules.list" "$STATE_DIR/good_modules.list" 2>/dev/null
     if [ -d "$PERSIST_DIR/snapshots" ]; then
-        for snap in "$PERSIST_DIR/snapshots"/*.txt; do
+        for snap in "$PERSIST_DIR/snapshots"/snap-*.txt "$PERSIST_DIR/snapshots"/auto-snap-*.txt; do
             [ -f "$snap" ] || continue
             snap_name=$(basename "$snap")
             [ ! -f "$SNAPSHOT_DIR/$snap_name" ] && cp "$snap" "$SNAPSHOT_DIR/" 2>/dev/null
@@ -244,7 +248,7 @@ mkdir -p "$PERSIST_DIR" 2>/dev/null
 done
 if [ -d "$SNAPSHOT_DIR" ]; then
     mkdir -p "$PERSIST_DIR/snapshots" 2>/dev/null
-    for snap in "$SNAPSHOT_DIR"/snap-*.txt; do
+    for snap in "$SNAPSHOT_DIR"/snap-*.txt "$SNAPSHOT_DIR"/auto-snap-*.txt; do
         [ -f "$snap" ] && cp "$snap" "$PERSIST_DIR/snapshots/" 2>/dev/null
     done
 fi
@@ -289,7 +293,7 @@ ui_print "  · OTA 超时: 900 秒 (15 分钟)"
 ui_print "  · 补丁超时: 180 秒"
 ui_print "  · 渐进式救砖: 启用"
 ui_print "  · 启动模式感知: 启用"
-  ui_print "  · 数据持久化: 启用 (v3.0.1)"
+  ui_print "  · 数据持久化: 启用 (v3.2.0)"
 ui_print "  · DRY_RUN: 关闭"
 ui_print ""
 ui_print "  通过 WebUI 可调整全部参数"
