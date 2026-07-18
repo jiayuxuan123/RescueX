@@ -1,6 +1,6 @@
 {
-  "version": "v3.2.6",
-  "versionCode": 32600,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.2.6/RescueX-v3.2.6.zip",
+  "version": "v3.2.6-alpha",
+  "versionCode": 32601,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.2.6-alpha/RescueX-v3.2.6-alpha.zip",
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md"
 }

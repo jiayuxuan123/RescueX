@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.6 - service.sh
+# RescueX v3.2.6-alpha - service.sh
 # 系统完全启动后执行，标记启动成功
 #
 # v3.0.1 改进：
