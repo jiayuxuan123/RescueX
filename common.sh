@@ -165,6 +165,7 @@ sync_to_persist() {
     # 快照目录
     if [ -d "$SNAPSHOT_DIR" ]; then
         mkdir -p "$PERSIST_DIR/snapshots" 2>/dev/null
+        _sync_persist_snapshot_dir
         for snap in "$SNAPSHOT_DIR"/snap-*.txt "$SNAPSHOT_DIR"/auto-snap-*.txt; do
             [ -f "$snap" ] && cp "$snap" "$PERSIST_DIR/snapshots/" 2>/dev/null
         done
@@ -869,6 +870,26 @@ is_legacy_auto_snapshot_file() {
     local snap_file="$1"
     [ -f "$snap_file" ] || return 1
     grep -q '^# 类型: auto$' "$snap_file" 2>/dev/null
+}
+
+_sync_persist_snapshot_dir() {
+    local persisted snap_name
+    [ -d "$PERSIST_DIR/snapshots" ] || return 0
+    for persisted in "$PERSIST_DIR/snapshots"/snap-*.txt "$PERSIST_DIR/snapshots"/auto-snap-*.txt; do
+        [ -f "$persisted" ] || continue
+        snap_name=$(basename "$persisted")
+        [ -f "$SNAPSHOT_DIR/$snap_name" ] && continue
+        rm -f "$persisted" 2>/dev/null
+    done
+    return 0
+}
+
+delete_persisted_snapshot() {
+    local snap_name="$1"
+    [ -n "$snap_name" ] || return 0
+    [ -d "$PERSIST_DIR/snapshots" ] || return 0
+    rm -f "$PERSIST_DIR/snapshots/$snap_name" 2>/dev/null
+    return 0
 }
 
 normalize_snapshot_storage() {
@@ -1883,10 +1904,13 @@ list_snapshots() {
 # 删除快照
 # 参数: <snap_file>
 delete_snapshot() {
+    local snap_name=""
     case "$1" in
         "$SNAPSHOT_DIR"/snap-*.txt)
             [ -f "$1" ] || return 1
+            snap_name=$(basename "$1")
             rm -f "$1" 2>/dev/null || return 1
+            delete_persisted_snapshot "$snap_name"
             ;;
         *)
             return 1

@@ -18,6 +18,7 @@ STATE_DIR="$TMP_ROOT/mod/webroot/state"
 SNAPSHOT_DIR="$STATE_DIR/snapshots"
 AUTO_SNAPSHOT_FILE="$SNAPSHOT_DIR/auto-snap-latest.txt"
 AUTO_SNAPSHOT_SESSION_FILE="$STATE_DIR/auto_snapshot_session"
+PERSIST_DIR="$TMP_ROOT/persist"
 MODULE_BASE="$TMP_ROOT/modules"
 MODULE_BASE_KSU="$TMP_ROOT/modules_ksu"
 MODULE_BASE_AP="$TMP_ROOT/modules_ap"
@@ -124,6 +125,28 @@ assert_file_exists "$AUTO_SNAPSHOT_FILE" "历史自动快照应并入 auto-snap-
 assert_file_missing "$SNAPSHOT_DIR/snap-20260101-legacy-auto.txt" "历史自动快照文件应被清理"
 assert_file_exists "$SNAPSHOT_DIR/snap-20260101-manual.txt" "手动快照应继续保留"
 pass "legacy auto snapshot cleanup"
+
+mkdir -p "$PERSIST_DIR/snapshots"
+cat > "$SNAPSHOT_DIR/snap-20260101-delete-me.txt" <<'EOF'
+# RescueX 模块快照 - test
+# 类型: manual
+# 格式: mod_id=enabled|disabled
+alpha=enabled
+EOF
+cp "$SNAPSHOT_DIR/snap-20260101-delete-me.txt" "$PERSIST_DIR/snapshots/"
+delete_snapshot "$SNAPSHOT_DIR/snap-20260101-delete-me.txt"
+assert_file_missing "$SNAPSHOT_DIR/snap-20260101-delete-me.txt" "运行态快照删除应成功"
+assert_file_missing "$PERSIST_DIR/snapshots/snap-20260101-delete-me.txt" "删除快照时应同步清理持久化副本"
+
+cat > "$PERSIST_DIR/snapshots/snap-20260101-stale.txt" <<'EOF'
+# RescueX 模块快照 - stale
+# 类型: manual
+# 格式: mod_id=enabled|disabled
+alpha=enabled
+EOF
+sync_to_persist
+assert_file_missing "$PERSIST_DIR/snapshots/snap-20260101-stale.txt" "持久化目录中的过期快照应在同步时被清理"
+pass "snapshot deletion syncs persist mirror"
 
 cat > "$SNAPSHOT_DIR/snap-invalid.txt" <<'EOF'
 # malformed snapshot
