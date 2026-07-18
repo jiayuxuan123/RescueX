@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.6-alpha - Action 入口
+# RescueX v3.2.7-alpha - Action 入口
 # 兼容 KernelSU / KsuWebUI / MMRL / Magisk + APatch
 #
 # v3.0.1: WebUI 不可用时显示 CLI 状态信息（参考 BG 的 action.sh）
@@ -29,7 +29,7 @@ is_pkg_installed() {
 # === CLI 状态显示（WebUI 不可用时的回退） ===
 show_cli_status() {
     echo "========================================="
-    echo "   RescueX v3.2.6-alpha - 模块状态"
+    echo "   RescueX v3.2.7-alpha - 模块状态"
     echo "========================================="
     echo ""
 
@@ -75,7 +75,8 @@ show_cli_status() {
     # 嫌疑模块
     SUSPECT_FILE="${STATE_DIR:-/data/adb/modules/$MODID/webroot/state}/suspect_modules.log"
     if [ -f "$SUSPECT_FILE" ]; then
-        suspects=$(grep -v '^?' "$SUSPECT_FILE" 2>/dev/null | grep -v '^#' | grep -v '^unknown$' | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
+        suspects=$(grep -v '^?' "$SUSPECT_FILE" 2>/dev/null | grep -v '^+' | grep -v '^#' | grep -v '^unknown$' | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
+        changed=$(grep '^+' "$SUSPECT_FILE" 2>/dev/null | sed 's/^+//' | tr '\n' ',' | sed 's/,$//')
         unclear=$(grep '^?' "$SUSPECT_FILE" 2>/dev/null | sed 's/^?//' | tr '\n' ',' | sed 's/,$//')
         if [ -n "$suspects" ]; then
             echo "嫌疑模块: $suspects"
@@ -84,6 +85,9 @@ show_cli_status() {
         fi
         if [ -n "$unclear" ]; then
             echo "参考模块: $unclear"
+        fi
+        if [ -n "$changed" ]; then
+            echo "状态变化嫌疑: $changed"
         fi
     fi
 

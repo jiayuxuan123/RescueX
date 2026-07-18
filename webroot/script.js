@@ -13,8 +13,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.2.6-alpha';
-const APP_VERSION_CODE = 32601;
+const APP_VERSION = 'v3.2.7-alpha';
+const APP_VERSION_CODE = 32701;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -113,8 +113,8 @@ const I18N = {
         manager: '管理器',
         source_code: '源码',
         update_notice: '更新公告',
-        update_notice_title: 'WebUI 检查更新跳转修复',
-        update_notice_desc: '检测到新版本后不再尝试打开二进制直链（WebView 不支持），改为跳转 GitHub Releases 页面手动下载。',
+        update_notice_title: '状态一致性与隐私提示修复',
+        update_notice_desc: '统一 CLI/WebUI 嫌疑模块和已知良好基线展示，收紧看门狗状态判断，并补充诊断报告导出提示。',
         check_update: '检查更新',
         checking_update: '正在检查更新...',
         update_available: '发现新版本',
@@ -122,7 +122,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.6-alpha 修正版：WebUI 检查更新跳转修复。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.7-alpha 修正版：状态一致性与隐私提示修复。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -245,6 +245,7 @@ const I18N = {
         doc_close: '关闭',
         features_title: 'RescueX 功能介绍',
         privacy_title: 'RescueX 隐私协议',
+        report_privacy_confirm: '诊断报告包含设备型号、系统版本、模块列表、配置、日志和启动历史。导出或分享前请确认你信任接收方。是否继续？',
         usage_title: 'RescueX 使用须知',
         // 其他
         never: '从未',
@@ -406,8 +407,8 @@ const I18N = {
         manager: 'Manager',
         source_code: 'Source',
         update_notice: 'Update Notice',
-        update_notice_title: 'WebUI update check redirect fix',
-        update_notice_desc: 'After detecting a new version, opens the GitHub Releases page instead of trying to open a binary zip link (unsupported in WebView).',
+        update_notice_title: 'Status consistency and privacy notice fixes',
+        update_notice_desc: 'Unifies CLI/WebUI suspect and known-good baseline display, tightens watchdog ownership checks, and adds diagnostic export notice.',
         check_update: 'Check Updates',
         checking_update: 'Checking updates...',
         update_available: 'Update available',
@@ -415,7 +416,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.6-alpha hotfix: WebUI update check redirect fix.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.7-alpha hotfix: status consistency and privacy notice fixes.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -525,6 +526,7 @@ const I18N = {
         doc_close: 'Close',
         features_title: 'RescueX Features',
         privacy_title: 'RescueX Privacy Policy',
+        report_privacy_confirm: 'The diagnostic report contains device model, system version, module list, config, logs, and boot history. Confirm you trust the recipient before exporting or sharing. Continue?',
         usage_title: 'RescueX Usage Notice',
         // 其他
         never: 'Never',
@@ -831,7 +833,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.6-alpha' : 'Automatic Boot Rescue v3.2.6-alpha';
+        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.7-alpha' : 'Automatic Boot Rescue v3.2.7-alpha';
     }
 
     openExternal(url) {
@@ -2057,6 +2059,12 @@ done`;
 
     // === 诊断报告 ===
     async generateReport() {
+        const confirm = await this.confirmDialog(
+            this.t('confirm_title'),
+            this.t('report_privacy_confirm'),
+            this.t('btn_confirm'), 'btn-filled'
+        );
+        if (!confirm) return;
         this.showLoading(true);
         // v2.7: 60s 超时下补充 "生成中..." 提示，避免用户误以为卡死
         this.toast(this.lang === 'zh' ? '生成中...' : 'Generating...', '', 60000);
@@ -2652,7 +2660,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
             </div>
             <div class="privacy-section">
                 <h3>4. 网络行为</h3>
-                <p>RescueX <strong>完全离线运行</strong>，不发起任何网络请求。WebUI 中的"导出配置/报告"功能通过 shell 写入 <code>/sdcard/Download/</code>，由用户自行管理。</p>
+                <p>RescueX 仅在用户点击检查更新时访问 GitHub 上的 <code>update.json</code> 与 Releases 页面。WebUI 中的"导出配置/报告"功能通过 shell 写入 <code>/sdcard/Download/</code>，由用户自行管理。</p>
             </div>
             <div class="privacy-section">
                 <h3>5. 卸载与数据清理</h3>
@@ -2695,7 +2703,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
             </div>
             <div class="privacy-section">
                 <h3>4. Network</h3>
-                <p>RescueX <strong>runs fully offline</strong>. No network requests. Export features write to <code>/sdcard/Download/</code> via shell.</p>
+                <p>RescueX only contacts GitHub <code>update.json</code> and Releases when the user taps Check Updates. Export features write to <code>/sdcard/Download/</code> via shell.</p>
             </div>
             <div class="privacy-section">
                 <h3>5. Uninstall</h3>
@@ -2724,7 +2732,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 <li><strong>备份重要数据</strong>：虽然救砖逻辑设计为只禁用模块不清数据，但极端情况下仍可能需要恢复出厂设置。</li>
                 <li><strong>在测试设备上验证</strong>：首次使用建议先在非主力设备上测试，确认逻辑符合预期。</li>
                 <li><strong>开启 DRY_RUN 模式</strong>：首次使用时勾选 DRY_RUN，仅记录日志不实际禁用，观察日志确认逻辑无误后再正式启用。</li>
-            </ol>
+            </ul>
 
             <h3>📋 推荐配置流程</h3>
             <ol>
@@ -2735,7 +2743,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 <li>确认无误后，关闭 DRY_RUN，根据需要调整阈值与超时</li>
                 <li>将关键模块（字体、音效等）加入白名单</li>
                 <li>拍一张当前模块状态快照，作为恢复基线</li>
-            </ol>
+            </ul>
 
             <h3>🔧 参数调优建议</h3>
             <ul>
@@ -3064,16 +3072,18 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
     // === v3.0.1: 嫌疑模块追踪面板 ===
     async loadSuspectModules() {
         try {
+            const goodRaw = await this.exec(`cat "${this.stateDir}/good_modules.list" 2>/dev/null`, EXEC_DEFAULT_TIMEOUT_MS);
+            const goodEntries = goodRaw.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+            const goodEnabledCount = goodEntries.filter(line => !line.startsWith(':') && MODULE_ID_RE.test(line)).length;
+            const goodTotalCount = goodEntries.filter(line => MODULE_ID_RE.test(line.replace(/^:/, ''))).length;
             const modulesRaw = await this.exec(`. "${this.basePath}/common.sh" && list_all_modules | cut -d'|' -f1,2`, EXEC_DEFAULT_TIMEOUT_MS);
             const currentModules = modulesRaw.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
                 const parts = line.split('|');
                 return { id: parts[0], enabled: parts[1] === '1' };
             }).filter(item => item.id);
             const currentModuleIds = new Set(currentModules.map(item => item.id));
-            const enabledCount = currentModules.filter(item => item.enabled).length;
-            const totalCount = currentModules.length;
-            this.setText('#info-good-modules', enabledCount);
-            this.goodModuleStats = { enabled: enabledCount, total: totalCount };
+            this.setText('#info-good-modules', goodEnabledCount);
+            this.goodModuleStats = { enabled: goodEnabledCount, total: goodTotalCount };
 
             // Load suspect log
             const suspectRaw = await this.exec(`cat "${this.stateDir}/suspect_modules.log" 2>/dev/null`);
@@ -3081,7 +3091,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
             if (!el) return;
 
             if (!suspectRaw || suspectRaw.trim() === '' || suspectRaw.trim().startsWith('#')) {
-                el.innerHTML = `<div class="empty-state">${totalCount > 0 ? (this.lang === 'zh' ? '暂无嫌疑记录（已知良好模块已建立）' : 'No suspects (good module list is established)') : this.t('loading')}</div>`;
+                el.innerHTML = `<div class="empty-state">${goodTotalCount > 0 ? (this.lang === 'zh' ? '暂无嫌疑记录（已知良好模块已建立）' : 'No suspects (good module list is established)') : this.t('loading')}</div>`;
                 this.setText('#info-suspect-count', 0);
                 this.renderReadiness();
                 return;
