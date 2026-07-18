@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.7-alpha - service.sh
+# RescueX v3.2.8 - service.sh
 # 系统完全启动后执行，标记启动成功
 #
 # v3.0.1 改进：
@@ -180,6 +180,9 @@ update_status_fields "$BOOT_END" 1 "SUCCESS" 0 "$CURRENT_UPTIME"
 
 # 修正可能异常的 LAST_RESCUE_TIME（post-fs-data 阶段时钟未同步）
 fix_last_rescue_time
+
+# 启动成功后回滚救砖期间的脚本权限锁定和风险脚本隔离记录
+restore_script_locks permissions
 
 # 从状态文件读取计算后的 boot_duration 用于日志
 BOOT_DURATION=0

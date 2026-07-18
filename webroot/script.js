@@ -13,8 +13,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.2.7-alpha';
-const APP_VERSION_CODE = 32701;
+const APP_VERSION = 'v3.2.8';
+const APP_VERSION_CODE = 32800;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -122,7 +122,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.7-alpha 修正版：状态一致性与隐私提示修复。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.8：救援决策报告、脚本隔离恢复与误判逻辑修复。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -416,7 +416,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.7-alpha hotfix: status consistency and privacy notice fixes.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.8: rescue decision report, script quarantine recovery, and false-positive logic fixes.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -656,6 +656,19 @@ class RescueXUI {
         // 记录标记而非在别处直接比较 `this.bridge === ksu`：
         // 若宿主容器压根未声明 ksu 变量（而非设为 undefined），直接引用会在严格模式下抛 ReferenceError
         this.isKsu = !!hasKsu;
+        this.allowedActions = new Set([
+            'addCustomDir', 'checkUpdate', 'clearLog', 'clearScriptRiskAlert',
+            'clearSuspectLog', 'copyAuditLog', 'copyLog', 'deleteSnapshot',
+            'deselectAllModules', 'disableAllModules', 'exportConfig', 'exportFullState',
+            'exportLog', 'generateDecisionReport', 'generateReport', 'importConfig',
+            'lockScriptDirs', 'openReleases', 'openRepository', 'rebootDevice',
+            'reenableAllModules', 'refreshAuditLog', 'refreshLog', 'refreshModules',
+            'refreshStats', 'removeCustomDir', 'resetRescueLevel', 'restoreBaseline',
+            'restoreSnapshot', 'saveConfig', 'saveCustomDirs', 'saveGoodModules',
+            'saveWhitelist', 'selectAllModules', 'showFeatures', 'showPrivacy',
+            'showUsage', 'takeSnapshot', 'testWatchdog', 'toggleEnabled',
+            'togglePatchFlag', 'unfreezeApps'
+        ]);
 
         // 应用初始语言
         this.applyLang(this.lang);
@@ -666,7 +679,7 @@ class RescueXUI {
             if (target) {
                 e.preventDefault();
                 const action = target.dataset.action;
-                if (typeof this[action] === 'function') this[action](e, target);
+                if (this.allowedActions.has(action) && typeof this[action] === 'function') this[action](e, target);
                 return;
             }
             // v2.7: 单模块切换按钮
@@ -833,7 +846,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.7-alpha' : 'Automatic Boot Rescue v3.2.7-alpha';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.8' : 'Automatic Boot Rescue v3.2.8';
     }
 
     openExternal(url) {

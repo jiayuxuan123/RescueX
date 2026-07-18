@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.7-alpha - common.sh
+# RescueX v3.2.8 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.2.7-alpha"
-RX_VERSION_CODE=327
+RX_VERSION="v3.2.8"
+RX_VERSION_CODE=32800
 
 # ============================================================
 # 路径初始化
@@ -50,6 +50,7 @@ _rescuex_init_paths() {
     MAX_MANUAL_SNAPSHOTS=5
     SCRIPT_RISK_ALERT_FILE="$STATE_DIR/script_risk_alert.conf"
     SCRIPT_RISK_QUARANTINE_DIR="$STATE_DIR/script_risk_quarantine"
+    SCRIPT_LOCK_RECORD_FILE="$STATE_DIR/script_lock_records.conf"
 
     # v3.0.0: 嫌疑模块追踪
     GOOD_MODULES_FILE="$STATE_DIR/good_modules.list"   # 成功开机后的已知良好模块列表
@@ -160,7 +161,7 @@ sync_to_persist() {
     mkdir -p "$PERSIST_DIR" 2>/dev/null
     normalize_snapshot_storage
     sync_removable_persist_state_files
-    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session; do
+    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session script_lock_records.conf; do
         [ -f "$STATE_DIR/$f" ] && cp "$STATE_DIR/$f" "$PERSIST_DIR/$f" 2>/dev/null
     done
     # 快照目录
@@ -179,7 +180,7 @@ sync_to_persist() {
 restore_from_persist() {
     [ ! -d "$PERSIST_DIR" ] && return 1
     local restored=0
-    for f in config.conf whitelist.conf boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session; do
+    for f in config.conf whitelist.conf boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session script_lock_records.conf; do
         if [ -f "$PERSIST_DIR/$f" ] && [ ! -f "$STATE_DIR/$f" ]; then
             cp "$PERSIST_DIR/$f" "$STATE_DIR/$f" 2>/dev/null && restored=$((restored + 1))
         fi
@@ -595,23 +596,19 @@ detect_patch_update() {
 
     # 优先级 6: 通用 Android System Update（Package Installer 上层更新）
     if [ -f "/data/ota/last_install" ] 2>/dev/null; then
-        # 检查最近修改时间，5 分钟内视为补丁更新窗口
+        # 检查最近修改时间，5 分钟内视为补丁更新窗口。时钟异常时跳过，避免常驻文件误报。
         local now mtime
         now=$(date +%s 2>/dev/null)
         mtime=$(stat -c %Y "/data/ota/last_install" 2>/dev/null || stat -f %m "/data/ota/last_install" 2>/dev/null || echo 0)
+        case "$now" in ''|*[!0-9]*) now=0 ;; esac
         case "$mtime" in ''|*[!0-9]*) mtime=0 ;; esac
-        if [ "$now" != "0" ] && [ "$mtime" != "0" ] && [ "$((now - mtime))" -lt 300 ]; then
+        if [ "$now" -ge 1577836800 ] 2>/dev/null && [ "$mtime" -gt 0 ] && [ "$mtime" -le "$now" ] && [ "$((now - mtime))" -lt 300 ]; then
             return 0
         fi
     fi
 
     # 优先级 7: /cache 分区下的更新包残留
     if [ -f "/cache/update.zip" ] 2>/dev/null || [ -f "/cache/ota.zip" ] 2>/dev/null; then
-        return 0
-    fi
-
-    # 优先级 8: 检测 PackageInstaller 上层应用更新标记
-    if [ -f "/data/system/packages.xml.backup" ] 2>/dev/null; then
         return 0
     fi
 
@@ -745,8 +742,71 @@ clear_suspect_log() {
 }
 
 clear_script_risk_alert() {
+    restore_script_locks
     rm -f "$SCRIPT_RISK_ALERT_FILE" 2>/dev/null
+    delete_persisted_state_file "script_lock_records.conf"
     log_rescue_action "SCRIPT_RISK_ALERT_CLEAR" "manual"
+    return 0
+}
+
+_get_file_mode() {
+    local target="$1" mode
+    [ -e "$target" ] || return 1
+    mode=$(stat -c %a "$target" 2>/dev/null || stat -f %Lp "$target" 2>/dev/null || echo "")
+    case "$mode" in ''|*[!0-7]*) mode=755 ;; esac
+    printf '%s\n' "$mode"
+}
+
+_record_script_lock() {
+    local target="$1" mode="$2" quarantine="${3:-}"
+    [ -n "$target" ] || return 1
+    case "$target" in *'|'*) return 1 ;; esac
+    case "$quarantine" in *'|'*) return 1 ;; esac
+    mkdir -p "$STATE_DIR" 2>/dev/null
+    grep -F "|$target|" "$SCRIPT_LOCK_RECORD_FILE" >/dev/null 2>&1 && return 0
+    printf '%s|%s|%s\n' "$mode" "$target" "$quarantine" >> "$SCRIPT_LOCK_RECORD_FILE" 2>/dev/null || return 1
+    chmod 0600 "$SCRIPT_LOCK_RECORD_FILE" 2>/dev/null
+    return 0
+}
+
+restore_script_locks() {
+    [ -f "$SCRIPT_LOCK_RECORD_FILE" ] || return 0
+    local scope="${1:-all}"
+    local tmp_file="${SCRIPT_LOCK_RECORD_FILE}.tmp.$$"
+    local mode target quarantine restored=0 kept=0
+    : > "$tmp_file" 2>/dev/null || return 1
+    while IFS='|' read -r mode target quarantine || [ -n "$mode$target$quarantine" ]; do
+        case "$mode" in ''|*[!0-7]*) mode=755 ;; esac
+        [ -n "$target" ] || continue
+        case "$target" in /data/adb/*|"$STATE_DIR"/*|"$MODDIR"/*) ;; *) continue ;; esac
+        if [ "$scope" = "permissions" ] && [ -n "$quarantine" ]; then
+            printf '%s|%s|%s\n' "$mode" "$target" "$quarantine" >> "$tmp_file"
+            kept=$((kept + 1))
+            continue
+        fi
+        if [ -n "$quarantine" ] && [ -f "$quarantine" ]; then
+            if [ ! -e "$target" ]; then
+                mv -f "$quarantine" "$target" 2>/dev/null || {
+                    printf '%s|%s|%s\n' "$mode" "$target" "$quarantine" >> "$tmp_file"
+                    kept=$((kept + 1))
+                    continue
+                }
+            fi
+        fi
+        if [ -e "$target" ]; then
+            chmod "$mode" "$target" 2>/dev/null
+            restored=$((restored + 1))
+        fi
+    done < "$SCRIPT_LOCK_RECORD_FILE"
+    if [ "$kept" -gt 0 ]; then
+        mv -f "$tmp_file" "$SCRIPT_LOCK_RECORD_FILE" 2>/dev/null
+        chmod 0600 "$SCRIPT_LOCK_RECORD_FILE" 2>/dev/null
+    else
+        rm -f "$tmp_file" "$SCRIPT_LOCK_RECORD_FILE" 2>/dev/null
+        delete_persisted_state_file "script_lock_records.conf"
+    fi
+    [ "$restored" -gt 0 ] && log "已还原脚本锁定权限: $restored 个"
+    [ "$restored" -gt 0 ] && log_rescue_action "RESTORE_SCRIPT_LOCKS" "restored=$restored,kept=$kept"
     return 0
 }
 
@@ -884,7 +944,7 @@ delete_persisted_state_file() {
 
 sync_removable_persist_state_files() {
     local file_name
-    for file_name in patch_update_flag rescued_disabled.list auto_snapshot_session; do
+    for file_name in patch_update_flag rescued_disabled.list auto_snapshot_session script_lock_records.conf; do
         [ -f "$STATE_DIR/$file_name" ] && continue
         delete_persisted_state_file "$file_name"
     done
@@ -1121,7 +1181,13 @@ _disable_module_by_dir() {
     local module_dir="$1"
     [ -d "$module_dir" ] || return 1
     touch "$module_dir/disable" 2>/dev/null || return 1
-    chmod 000 "$module_dir/post-fs-data.sh" "$module_dir/service.sh" "$module_dir/post-mount.sh" "$module_dir/boot-completed.sh" 2>/dev/null
+    local script mode
+    for script in "$module_dir/post-fs-data.sh" "$module_dir/service.sh" "$module_dir/post-mount.sh" "$module_dir/boot-completed.sh"; do
+        [ -f "$script" ] || continue
+        mode=$(_get_file_mode "$script")
+        _record_script_lock "$script" "$mode"
+        chmod 000 "$script" 2>/dev/null
+    done
     return 0
 }
 
@@ -1129,8 +1195,15 @@ _quarantine_script_file() {
     local target="$1"
     [ -f "$target" ] || return 1
     mkdir -p "$SCRIPT_RISK_QUARANTINE_DIR" 2>/dev/null
-    chmod 000 "$target" 2>/dev/null
-    cp "$target" "$SCRIPT_RISK_QUARANTINE_DIR/$(basename "$target").$(date +%s 2>/dev/null || echo 0).blocked" 2>/dev/null
+    local mode quarantine
+    mode=$(_get_file_mode "$target")
+    quarantine="$SCRIPT_RISK_QUARANTINE_DIR/$(basename "$target").$(date +%s 2>/dev/null || echo 0).blocked"
+    _record_script_lock "$target" "$mode" "$quarantine"
+    mv -f "$target" "$quarantine" 2>/dev/null || {
+        chmod 000 "$target" 2>/dev/null
+        cp "$target" "$quarantine" 2>/dev/null
+    }
+    chmod 0600 "$quarantine" 2>/dev/null
     return 0
 }
 
@@ -1466,6 +1539,53 @@ read_previous_status() {
     case "$PREV_LAST_RESCUE_TIME" in ''|*[!0-9]*) PREV_LAST_RESCUE_TIME=0 ;; esac
 }
 
+# 读取当前状态（填充无 PREV_ 前缀的字段，供 WebUI 报告使用）
+read_status() {
+    BOOT_START=0
+    BOOT_END=0
+    SERVICE_STARTED=0
+    FAIL_COUNT=0
+    BOOT_RESULT="UNKNOWN"
+    OTA_DETECTED="false"
+    RESCUE_COUNT=0
+    LAST_RESCUE_TIME=0
+    BOOT_DURATION=0
+    UPTIME_START=0
+    UPTIME_END=0
+    PATCH_DETECTED="false"
+
+    [ -f "$STATUS_FILE" ] || return 0
+
+    local k v
+    while IFS='=' read -r k v || [ -n "$k$v" ]; do
+        [ -z "$k" ] && continue
+        case "$k" in
+            BOOT_START) BOOT_START="$v" ;;
+            BOOT_END) BOOT_END="$v" ;;
+            SERVICE_STARTED) SERVICE_STARTED="$v" ;;
+            FAIL_COUNT) FAIL_COUNT="$v" ;;
+            LAST_BOOT_RESULT) BOOT_RESULT="$v" ;;
+            OTA_DETECTED) OTA_DETECTED="$v" ;;
+            RESCUE_COUNT) RESCUE_COUNT="$v" ;;
+            LAST_RESCUE_TIME) LAST_RESCUE_TIME="$v" ;;
+            BOOT_DURATION) BOOT_DURATION="$v" ;;
+            UPTIME_START) UPTIME_START="$v" ;;
+            UPTIME_END) UPTIME_END="$v" ;;
+            PATCH_DETECTED) PATCH_DETECTED="$v" ;;
+        esac
+    done < "$STATUS_FILE"
+
+    case "$BOOT_START" in ''|*[!0-9]*) BOOT_START=0 ;; esac
+    case "$BOOT_END" in ''|*[!0-9]*) BOOT_END=0 ;; esac
+    case "$SERVICE_STARTED" in ''|*[!0-9]*) SERVICE_STARTED=0 ;; esac
+    case "$FAIL_COUNT" in ''|*[!0-9]*) FAIL_COUNT=0 ;; esac
+    case "$RESCUE_COUNT" in ''|*[!0-9]*) RESCUE_COUNT=0 ;; esac
+    case "$LAST_RESCUE_TIME" in ''|*[!0-9]*) LAST_RESCUE_TIME=0 ;; esac
+    case "$BOOT_DURATION" in ''|*[!0-9]*) BOOT_DURATION=0 ;; esac
+    case "$UPTIME_START" in ''|*[!0-9]*) UPTIME_START=0 ;; esac
+    case "$UPTIME_END" in ''|*[!0-9]*) UPTIME_END=0 ;; esac
+}
+
 # 修正 post-fs-data 阶段因 NTP 未同步导致 LAST_RESCUE_TIME 为 1971 年异常值的问题
 # 在 post-fs-data 和 service.sh 中均会调用（双保险）
 # 仅当时钟已恢复正常时才执行修正，确保不引入错误值
@@ -1649,6 +1769,7 @@ reenable_all() {
         done
         log "兜底恢复完成: $enabled 个"
     fi
+    restore_script_locks permissions
 }
 
 # ============================================================
@@ -1910,6 +2031,7 @@ restore_snapshot() {
             touch "${found_dir}/disable" 2>/dev/null
         fi
     done < "$snap_file"
+    restore_script_locks permissions
     return 0
 }
 
@@ -1973,6 +2095,8 @@ restore_good_modules_baseline() {
             fi
         fi
     done < "$GOOD_MODULES_FILE"
+
+    restore_script_locks permissions
 
     log "已恢复稳定基线: changed=$changed skipped=$skipped"
     log_rescue_action "BASELINE_RESTORE" "changed=$changed,skipped=$skipped"
@@ -2135,6 +2259,7 @@ toggle_single_module() {
         enable)
             [ ! -f "${found_dir}/disable" ] && return 2  # already enabled
             rm -f "${found_dir}/disable" 2>/dev/null
+            restore_script_locks
             log "手动启用模块: $mod_id"
             log_rescue_action "MANUAL_ENABLE" "$mod_id"
             return 0
@@ -2221,18 +2346,8 @@ detect_boot_mode() {
         return 1
     fi
 
-    # Recovery 标记文件存在时也跳过
-    # v2.6.0 F-BUG-3 加固：
-    #   - 显式区分空文件（也是 recovery 残留特征）与含非 OTA 命令的文件
-    #   - 补充 ro.boot.bootreason 信号（部分厂商用此属性记录上次启动原因）
-    #   - 旧实现仅在 grep 失败时 return 1，但若文件为空 grep 也会失败，
-    #     行为正确但注释模糊；现显式列出条件便于审计
-    if [ -f "/cache/recovery/command" ]; then
-        if ! grep -q "update_package" "/cache/recovery/command" 2>/dev/null; then
-            # 文件存在但不含 update_package 命令（含空文件），视为 recovery 残留
-            return 1
-        fi
-    fi
+    # /cache/recovery/command 容易在 OTA/侧载后残留。这里仅依赖 boot 属性判断当前启动模式，
+    # OTA 文件信号交由 detect_ota 处理，避免残留空文件静默关闭看门狗。
     # 部分厂商（Qualcomm / MTK）通过 ro.boot.bootreason 记录启动原因
     local bootreason
     bootreason=$(getprop ro.boot.bootreason 2>/dev/null)
@@ -2666,11 +2781,18 @@ generate_report() {
 disable_script_dirs() {
     log "锁定脚本目录权限，防止救砖期间执行"
     local locked=0
+    local target mode
 
     # Magisk / KSU / APatch 共有的脚本目录
     for dir in /data/adb/service.d /data/adb/post-fs-data.d; do
         if [ -d "$dir" ] && [ "$(ls -A "$dir" 2>/dev/null)" ]; then
-            chmod 000 "$dir"/* 2>/dev/null && locked=$((locked + 1))
+            for target in "$dir"/*; do
+                [ -f "$target" ] || continue
+                mode=$(_get_file_mode "$target")
+                _record_script_lock "$target" "$mode"
+                chmod 000 "$target" 2>/dev/null
+            done
+            locked=$((locked + 1))
             log "已锁定: $dir"
         fi
     done
@@ -2678,14 +2800,30 @@ disable_script_dirs() {
     # KernelSU / APatch 额外支持的目录
     for dir in /data/adb/post-mount.d /data/adb/boot-completed.d; do
         if [ -d "$dir" ] && [ "$(ls -A "$dir" 2>/dev/null)" ]; then
-            chmod 000 "$dir"/* 2>/dev/null && locked=$((locked + 1))
+            for target in "$dir"/*; do
+                [ -f "$target" ] || continue
+                mode=$(_get_file_mode "$target")
+                _record_script_lock "$target" "$mode"
+                chmod 000 "$target" 2>/dev/null
+            done
+            locked=$((locked + 1))
             log "已锁定: $dir"
         fi
     done
 
     # 兼容旧版 KSU 路径
-    [ -d "/data/adb/ksu/service.d" ] && chmod 000 /data/adb/ksu/service.d/* 2>/dev/null
-    [ -d "/data/adb/ap/service.d" ] && chmod 000 /data/adb/ap/service.d/* 2>/dev/null
+    for dir in /data/adb/ksu/service.d /data/adb/ap/service.d; do
+        [ -d "$dir" ] || continue
+        [ "$(ls -A "$dir" 2>/dev/null)" ] || continue
+        for target in "$dir"/*; do
+            [ -f "$target" ] || continue
+            mode=$(_get_file_mode "$target")
+            _record_script_lock "$target" "$mode"
+            chmod 000 "$target" 2>/dev/null
+        done
+        locked=$((locked + 1))
+        log "已锁定: $dir"
+    done
 
     log "脚本目录锁定完成 ($locked 个目录)"
     log_rescue_action "LOCK_SCRIPT_DIRS" "locked=$locked"
