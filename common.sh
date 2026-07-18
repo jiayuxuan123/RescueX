@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.5 - common.sh
+# RescueX v3.2.6 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.2.5"
-RX_VERSION_CODE=325
+RX_VERSION="v3.2.6"
+RX_VERSION_CODE=326
 
 # ============================================================
 # 路径初始化
@@ -159,6 +159,7 @@ log() {
 sync_to_persist() {
     mkdir -p "$PERSIST_DIR" 2>/dev/null
     normalize_snapshot_storage
+    sync_removable_persist_state_files
     for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session; do
         [ -f "$STATE_DIR/$f" ] && cp "$STATE_DIR/$f" "$PERSIST_DIR/$f" 2>/dev/null
     done
@@ -645,6 +646,7 @@ set_patch_flag() {
 # 清除补丁更新标记（启动成功后调用）
 clear_patch_flag() {
     rm -f "$PATCH_FLAG_FILE" 2>/dev/null
+    delete_persisted_state_file "patch_update_flag"
     write_patch_fail_count 0
     log "补丁更新标记已清除（启动成功）"
 }
@@ -870,6 +872,23 @@ is_legacy_auto_snapshot_file() {
     local snap_file="$1"
     [ -f "$snap_file" ] || return 1
     grep -q '^# 类型: auto$' "$snap_file" 2>/dev/null
+}
+
+delete_persisted_state_file() {
+    local file_name="$1"
+    [ -n "$file_name" ] || return 0
+    [ -d "$PERSIST_DIR" ] || return 0
+    rm -f "$PERSIST_DIR/$file_name" 2>/dev/null
+    return 0
+}
+
+sync_removable_persist_state_files() {
+    local file_name
+    for file_name in patch_update_flag rescued_disabled.list auto_snapshot_session; do
+        [ -f "$STATE_DIR/$file_name" ] && continue
+        delete_persisted_state_file "$file_name"
+    done
+    return 0
 }
 
 _sync_persist_snapshot_dir() {
@@ -1612,6 +1631,7 @@ reenable_all() {
             fi
         done < "$RESCUED_DISABLED_LIST"
         rm -f "$RESCUED_DISABLED_LIST" 2>/dev/null
+        delete_persisted_state_file "rescued_disabled.list"
         log "精确恢复完成: $enabled 个（基于 rescued_disabled.list）"
     else
         # 兜底：无 rescued_disabled.list 时恢复所有被禁用模块

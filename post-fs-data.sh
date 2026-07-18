@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.5 - post-fs-data.sh
+# RescueX v3.2.6 - post-fs-data.sh
 # 在系统启动早期执行，负责救砖逻辑核心
 #
 # v3.0.1 改进（专业级升级）：

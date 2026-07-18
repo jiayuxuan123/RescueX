@@ -148,6 +148,17 @@ sync_to_persist
 assert_file_missing "$PERSIST_DIR/snapshots/snap-20260101-stale.txt" "持久化目录中的过期快照应在同步时被清理"
 pass "snapshot deletion syncs persist mirror"
 
+printf '1\n' > "$PATCH_FLAG_FILE"
+printf '1\n' > "$PERSIST_DIR/patch_update_flag"
+clear_patch_flag
+assert_file_missing "$PATCH_FLAG_FILE" "补丁标记应从运行态删除"
+assert_file_missing "$PERSIST_DIR/patch_update_flag" "补丁标记删除时应同步清理持久化副本"
+
+printf 'alpha\n' > "$PERSIST_DIR/rescued_disabled.list"
+sync_to_persist
+assert_file_missing "$PERSIST_DIR/rescued_disabled.list" "已删除的救砖禁用清单不应在持久化目录残留"
+pass "removable persist state cleanup"
+
 cat > "$SNAPSHOT_DIR/snap-invalid.txt" <<'EOF'
 # malformed snapshot
 alpha=disabled

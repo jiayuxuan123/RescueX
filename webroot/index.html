@@ -18,7 +18,7 @@
                 <div class="logo-icon">R</div>
                 <div class="brand-text">
                     <div class="title">RescueX</div>
-                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.2.5</div>
+                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.2.6</div>
                 </div>
             </div>
             <div class="appbar-actions">
@@ -414,9 +414,9 @@
             </div>
             <div class="card-body">
                 <div class="notice-block">
-                    <div class="notice-kicker text-mono">v3.2.5</div>
-                    <div class="notice-title" data-i18n="update_notice_title">移除代理更新链路</div>
-                    <p class="desc-text" data-i18n="update_notice_desc">仓库、Releases、在线更新元数据和下载地址恢复为 GitHub 直连，避免代理跳转后的跨域和二次跳转错误。</p>
+                    <div class="notice-kicker text-mono">v3.2.6</div>
+                    <div class="notice-title" data-i18n="update_notice_title">持久化状态删除一致性修复</div>
+                    <p class="desc-text" data-i18n="update_notice_desc">删除型状态文件现在会同步清理持久化副本，避免手动清理后在升级恢复时被历史残留重新带回。</p>
                     <div class="section-actions">
                         <button class="btn btn-filled" data-action="checkUpdate" data-i18n="check_update">检查更新</button>
                         <button class="btn btn-tonal" data-action="openRepository" data-i18n="open_source_repo">开源仓库</button>
@@ -498,7 +498,7 @@
                 <div class="info-grid">
                     <div class="info-tile">
                         <div class="label" data-i18n="version">版本</div>
-                        <div class="value text-mono">v3.2.5</div>
+                        <div class="value text-mono">v3.2.6</div>
                     </div>
                     <div class="info-tile">
                         <div class="label" data-i18n="manager">管理器</div>
@@ -509,7 +509,7 @@
                         <div class="value text-mono">jiayuxuan123/RescueX</div>
                     </div>
                 </div>
-                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.5 继续整合快照、稳定基线、决策报告、高风险脚本拦截与 GitHub 在线更新。</p>
+                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.6 继续整合快照、稳定基线、决策报告、高风险脚本拦截与 GitHub 在线更新。</p>
                 <div class="section-actions">
                     <button class="btn btn-text btn-sm" data-action="checkUpdate" data-i18n="check_update">检查更新</button>
                     <button class="btn btn-text btn-sm" data-action="showFeatures" data-i18n="feature_intro">功能介绍</button>

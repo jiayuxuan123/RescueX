@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.5 - watchdog.sh
+# RescueX v3.2.6 - watchdog.sh
 # 独立看门狗进程，由 post-fs-data.sh 启动
 #
 # v3.0.1 改进：

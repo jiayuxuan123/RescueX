@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.5 - uninstall.sh
+# RescueX v3.2.6 - uninstall.sh
 # 兼容 Magisk / KernelSU / APatch 三套管理器
 # 彻底清理看门狗进程和所有临时文件
 #
