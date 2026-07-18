@@ -867,10 +867,10 @@ done`;
             const remoteVersion = String(meta.version || '').trim() || '--';
             if (remoteCode > APP_VERSION_CODE) {
                 const message = this.lang === 'zh'
-                    ? `当前版本 ${APP_VERSION}，发现新版本 ${remoteVersion}。是否前往下载？`
-                    : `Current version ${APP_VERSION}. New version ${remoteVersion} is available. Open download page?`;
+                    ? `当前版本 ${APP_VERSION}，发现新版本 ${remoteVersion}。是否前往 Releases 页面查看？`
+                    : `Current version ${APP_VERSION}. New version ${remoteVersion} is available. Open Releases page?`;
                 const confirm = await this.confirmDialog(this.t('update_available'), message, this.t('btn_confirm'), 'btn-filled');
-                if (confirm) this.openExternal(meta.zipUrl || RELEASES_URL);
+                if (confirm) this.openExternal(RELEASES_URL);
                 return;
             }
             this.toast(this.t('update_up_to_date'), 'success', 3500);
