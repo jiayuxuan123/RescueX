@@ -13,9 +13,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.2.4';
-const APP_VERSION_CODE = 32400;
-const GIT_PROXY_PREFIX = 'https://gitjs.yunluo.de5.net/';
+const APP_VERSION = 'v3.2.5';
+const APP_VERSION_CODE = 32500;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -114,8 +113,8 @@ const I18N = {
         manager: '管理器',
         source_code: '源码',
         update_notice: '更新公告',
-        update_notice_title: '快照删除与持久化彻底对齐',
-        update_notice_desc: '删除手动快照时会同步清理持久化副本，升级恢复后不再出现“删了又回来”的旧快照。',
+        update_notice_title: '移除代理更新链路',
+        update_notice_desc: '仓库、Releases、在线更新元数据和下载地址恢复为 GitHub 直连，避免代理跳转后的跨域和二次跳转错误。',
         check_update: '检查更新',
         checking_update: '正在检查更新...',
         update_available: '发现新版本',
@@ -123,7 +122,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.4 继续整合快照、稳定基线、决策报告、高风险脚本拦截与 GitHub 代理更新。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.5 继续整合快照、稳定基线、决策报告、高风险脚本拦截与 GitHub 在线更新。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -407,8 +406,8 @@ const I18N = {
         manager: 'Manager',
         source_code: 'Source',
         update_notice: 'Update Notice',
-        update_notice_title: 'Snapshot deletion fully matches persistence',
-        update_notice_desc: 'Deleting a manual snapshot now clears its persisted mirror too, so old snapshots do not come back after upgrade or restore.',
+        update_notice_title: 'Proxy update path removed',
+        update_notice_desc: 'Repository, Releases, update metadata, and download URLs now use direct GitHub links to avoid proxy-related CORS and nested redirect failures.',
         check_update: 'Check Updates',
         checking_update: 'Checking updates...',
         update_available: 'Update available',
@@ -416,7 +415,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.4 continues the snapshot, baseline restore, decision report, high-risk script interception, and GitHub proxy update pass.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.5 continues the snapshot, baseline restore, decision report, high-risk script interception, and GitHub online update pass.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -832,7 +831,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.4' : 'Automatic Boot Rescue v3.2.4';
+        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.5' : 'Automatic Boot Rescue v3.2.5';
     }
 
     openExternal(url) {
@@ -850,23 +849,18 @@ done`;
         }
     }
 
-    proxiedUrl(url) {
-        if (!url) return '';
-        return url.startsWith(GIT_PROXY_PREFIX) ? url : `${GIT_PROXY_PREFIX}${url}`;
-    }
-
     openRepository() {
-        this.openExternal(this.proxiedUrl(REPO_URL));
+        this.openExternal(REPO_URL);
     }
 
     openReleases() {
-        this.openExternal(this.proxiedUrl(RELEASES_URL));
+        this.openExternal(RELEASES_URL);
     }
 
     async checkUpdate() {
         this.toast(this.t('checking_update'), '', 5000);
         try {
-            const response = await fetch(this.proxiedUrl(UPDATE_JSON_URL), { cache: 'no-store' });
+            const response = await fetch(UPDATE_JSON_URL, { cache: 'no-store' });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const meta = await response.json();
             const remoteCode = parseInt(meta.versionCode, 10) || 0;
@@ -876,7 +870,7 @@ done`;
                     ? `当前版本 ${APP_VERSION}，发现新版本 ${remoteVersion}。是否前往下载？`
                     : `Current version ${APP_VERSION}. New version ${remoteVersion} is available. Open download page?`;
                 const confirm = await this.confirmDialog(this.t('update_available'), message, this.t('btn_confirm'), 'btn-filled');
-                if (confirm) this.openExternal(this.proxiedUrl(meta.zipUrl || RELEASES_URL));
+                if (confirm) this.openExternal(meta.zipUrl || RELEASES_URL);
                 return;
             }
             this.toast(this.t('update_up_to_date'), 'success', 3500);

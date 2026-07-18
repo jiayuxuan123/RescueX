@@ -31,8 +31,8 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
 
 ## 条目
 
-[GitHub 访问代理]
+[GitHub 访问直连]
 - Date: 2026-07-18
-- Context: 用户要求处理 GitHub 仓库、Releases 和在线更新时统一走国内代理
+- Context: 用户确认代理链接会引发跨域和二次跳转问题，要求恢复 GitHub 直连
 - Instructions:
-  - GitHub 仓库地址、Releases 页面和 update.json 在线更新源统一使用 `https://gitjs.yunluo.de5.net/` 作为代理前缀
+  - GitHub 仓库地址、Releases 页面和 update.json 在线更新源统一使用 GitHub 直连地址
