@@ -1,7 +1,7 @@
 ## v3.2.0 (2026-07-17) - Formal Release
 
 ### New Features
-- **High-risk script interception**: Auto-scans module entry points (post-fs-data.sh, service.sh, etc.) for destructive wipe/format commands. Offending modules are disabled or script files locked immediately, with root notifications sent after boot completes.
+- **High-risk script interception**（实验性，未在真实设备上充分测试）：Auto-scans module entry points (post-fs-data.sh, service.sh, etc.) for destructive wipe/format commands. Offending modules are disabled or script files locked immediately, with root notifications sent after boot completes.
 - **Unified dashboard snapshot**: Frontend status panel and stats panel now share a single `get_dashboard_snapshot()` backend call, eliminating stale/divergent numbers from separate data sources.
 - **MMRL compatibility**: Updated update-cache handling for MMRL directories, with UI manager detection distinguishing SukiSU Ultra (MMRL) and KSU (MMRL).
 - **SukiSU Ultra recognition**: Manager detection now recognizes SukiSU Ultra as a KernelSU-compatible variant with proper UI display and launcher handling.
