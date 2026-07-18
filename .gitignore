@@ -1,0 +1,7 @@
+*.zip
+.state/
+*.tmp
+*.swp
+*.bak
+webroot/state/
+*.log

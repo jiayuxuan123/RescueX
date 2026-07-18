@@ -1,0 +1,40 @@
+## v3.2.0 (2026-07-17) - Formal Release
+
+### New Features
+- **High-risk script interception**: Auto-scans module entry points (post-fs-data.sh, service.sh, etc.) for destructive wipe/format commands. Offending modules are disabled or script files locked immediately, with root notifications sent after boot completes.
+- **Unified dashboard snapshot**: Frontend status panel and stats panel now share a single `get_dashboard_snapshot()` backend call, eliminating stale/divergent numbers from separate data sources.
+- **MMRL compatibility**: Updated update-cache handling for MMRL directories, with UI manager detection distinguishing SukiSU Ultra (MMRL) and KSU (MMRL).
+- **SukiSU Ultra recognition**: Manager detection now recognizes SukiSU Ultra as a KernelSU-compatible variant with proper UI display and launcher handling.
+- **Baseline restore**: One-click restore of last stable (known-good) module baseline from the WebUI.
+- **Rescue decision report**: Generates a structured text report of rescue decisions, module states, and boot statistics.
+- **Snapshot retention optimization**: Automatic snapshots now overwrite a single rolling file, while user-triggered snapshots remain individually preserved.
+- **Subtle easter eggs**: Lightweight UI easter eggs accessible via logo icon taps and rapid language switching.
+
+### Improvements
+- **Boot stats accuracy**: Rescue count now sourced from `boot_history` RESCUE entries, not from audit log line count. This fixes over-counting that inflated rescue numbers.
+- **Suspect module pruning**: Stale suspect-module log entries are pruned when the corresponding module is removed.
+- **Boot trend compact view**: Chart limited to the most recent 9 successful boot entries.
+- **OTA handling enhancement**: Added `modules_update` backup/replay flow during OTA upgrades.
+- **Version sweep**: All version strings unified to `v3.2.0` / `32000` across module metadata, scripts, and WebUI.
+
+### Fixed
+- Rescue count showing `28` in status panel but `3` in stats panel due to separate data queries.
+- `LAST_RESCUE_TIME` showing "never" when rescue count was non-zero.
+- Custom directory permission bypass for unsafe system paths.
+
+## v3.1.1-beta.1 (2026-07-17) - Beta
+
+### New Features
+- **Readiness panel**: WebUI now shows rescue readiness score with actionable warnings.
+- **Safer custom directories**: Custom directory permissions restricted to RescueX-owned prefixes only.
+- **Audit logging**: Manual actions (patch flag, snapshot ops, baseline changes) are logged to rescue audit.
+- **WebUI action routing**: High-risk actions like snapshots and restores routed through common.sh shared functions.
+
+## v3.1.0 (2026-07-16)
+
+- Initial structured module implementation with:
+  - Three-level progressive rescue
+  - Boot timeout watchdog
+  - Suspect module tracking
+  - OTA-aware timeout adjustment
+  - WebUI for management (compatible with KSU / Magisk v27+ / MMRL)
