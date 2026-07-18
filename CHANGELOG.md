@@ -1,3 +1,15 @@
+## v3.2.3 (2026-07-18)
+
+### New Features
+- **检查更新按钮**：WebUI 新增一键检查更新，可直接比对远端 `update.json` 并跳转下载。
+
+### Improvements
+- **代理访问统一**：GitHub 仓库、Releases 和在线更新元数据统一走 `https://gitjs.yunluo.de5.net/` 代理。
+- **手动快照保留收紧**：手动快照统一只保留最新 5 份。
+
+### Fixed
+- 历史版本把自动快照误存成 `snap-*.txt` 后，诊断报告和快照列表会将其当成手动快照展示的问题。
+
 ## v3.2.2 (2026-07-18)
 
 ### New Features

@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.2 - common.sh
+# RescueX v3.2.3 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.2.2"
-RX_VERSION_CODE=322
+RX_VERSION="v3.2.3"
+RX_VERSION_CODE=323
 
 # ============================================================
 # 路径初始化
@@ -47,7 +47,7 @@ _rescuex_init_paths() {
     SNAPSHOT_DIR="$STATE_DIR/snapshots"
     AUTO_SNAPSHOT_FILE="$SNAPSHOT_DIR/auto-snap-latest.txt"
     AUTO_SNAPSHOT_SESSION_FILE="$STATE_DIR/auto_snapshot_session"
-    MAX_MANUAL_SNAPSHOTS=12
+    MAX_MANUAL_SNAPSHOTS=5
     SCRIPT_RISK_ALERT_FILE="$STATE_DIR/script_risk_alert.conf"
     SCRIPT_RISK_QUARANTINE_DIR="$STATE_DIR/script_risk_quarantine"
 
@@ -158,6 +158,7 @@ log() {
 # 同步关键持久数据到外部目录（模块更新时不会丢失）
 sync_to_persist() {
     mkdir -p "$PERSIST_DIR" 2>/dev/null
+    normalize_snapshot_storage
     for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session; do
         [ -f "$STATE_DIR/$f" ] && cp "$STATE_DIR/$f" "$PERSIST_DIR/$f" 2>/dev/null
     done
@@ -189,6 +190,7 @@ restore_from_persist() {
             snap_name=$(basename "$snap")
             [ ! -f "$SNAPSHOT_DIR/$snap_name" ] && cp "$snap" "$SNAPSHOT_DIR/" 2>/dev/null && restored=$((restored + 1))
         done
+        normalize_snapshot_storage
         prune_manual_snapshots_in_dir "$SNAPSHOT_DIR"
     fi
     # boot_status 特殊处理：合并累计字段
@@ -859,6 +861,35 @@ prune_manual_snapshots_in_dir() {
         if [ "$count" -gt "$limit" ]; then
             rm -f "$snap" 2>/dev/null
         fi
+    done
+    return 0
+}
+
+is_legacy_auto_snapshot_file() {
+    local snap_file="$1"
+    [ -f "$snap_file" ] || return 1
+    grep -q '^# 类型: auto$' "$snap_file" 2>/dev/null
+}
+
+normalize_snapshot_storage() {
+    local snap latest_legacy_auto=""
+    [ -d "$SNAPSHOT_DIR" ] || return 0
+
+    for snap in $(ls -1 "$SNAPSHOT_DIR"/snap-*.txt 2>/dev/null | sort -r); do
+        [ -f "$snap" ] || continue
+        if is_legacy_auto_snapshot_file "$snap"; then
+            [ -n "$latest_legacy_auto" ] || latest_legacy_auto="$snap"
+        fi
+    done
+
+    if [ -n "$latest_legacy_auto" ] && [ ! -f "$AUTO_SNAPSHOT_FILE" ]; then
+        mv -f "$latest_legacy_auto" "$AUTO_SNAPSHOT_FILE" 2>/dev/null
+        chmod 0600 "$AUTO_SNAPSHOT_FILE" 2>/dev/null
+    fi
+
+    for snap in $(ls -1 "$SNAPSHOT_DIR"/snap-*.txt 2>/dev/null | sort -r); do
+        [ -f "$snap" ] || continue
+        is_legacy_auto_snapshot_file "$snap" && rm -f "$snap" 2>/dev/null
     done
     return 0
 }
@@ -1844,6 +1875,7 @@ restore_snapshot() {
 # 列出所有快照
 list_snapshots() {
     [ ! -d "$SNAPSHOT_DIR" ] && return
+    normalize_snapshot_storage
     prune_manual_snapshots_in_dir "$SNAPSHOT_DIR"
     ls -1 "$SNAPSHOT_DIR"/snap-*.txt 2>/dev/null | sort -r
 }
@@ -2554,11 +2586,20 @@ generate_report() {
         fi
         echo ""
 
-        echo "=== 快照列表 ==="
+        echo "=== 手动快照列表 ==="
         local snaps
         snaps=$(list_snapshots)
         if [ -n "$snaps" ]; then
             echo "$snaps" | while read -r s; do echo "  - $(basename "$s")"; done
+        else
+            echo "  (无)"
+        fi
+
+        echo ""
+        echo "=== 自动快照 ==="
+        normalize_snapshot_storage
+        if [ -f "$AUTO_SNAPSHOT_FILE" ]; then
+            echo "  - $(basename "$AUTO_SNAPSHOT_FILE")"
         else
             echo "  (无)"
         fi

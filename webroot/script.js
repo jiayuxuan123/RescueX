@@ -13,6 +13,12 @@
 'use strict';
 
 // === 安全校验常量 ===
+const APP_VERSION = 'v3.2.3';
+const APP_VERSION_CODE = 32300;
+const GIT_PROXY_PREFIX = 'https://gitjs.yunluo.de5.net/';
+const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
+const RELEASES_URL = `${REPO_URL}/releases`;
+const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
 const MODULE_ID_RE = /^[A-Za-z0-9._-]+$/;
 const ALLOWED_BASES = ['/data/adb/modules', '/data/adb/ksu/modules', '/data/adb/ap/modules', '/data/adb/ap_modules'];
 const DEFAULT_BASE_PATH = '/data/adb/modules/RescueX';
@@ -108,11 +114,16 @@ const I18N = {
         manager: '管理器',
         source_code: '源码',
         update_notice: '更新公告',
-        update_notice_title: '自动快照去重与在线更新接入',
-        update_notice_desc: '同一轮启动只保留一次自动快照，WebUI 已加入 GitHub 开源入口，模块元数据已接入 GitHub Release 在线更新。',
+        update_notice_title: '自动快照清理与在线检查更新',
+        update_notice_desc: '旧版本误存为 snap-*.txt 的自动快照会自动并入单一自动快照，WebUI 新增检查更新并统一走代理地址。',
+        check_update: '检查更新',
+        checking_update: '正在检查更新...',
+        update_available: '发现新版本',
+        update_up_to_date: '当前已是最新版本',
+        update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.2 继续整合快照、稳定基线、决策报告、高风险脚本拦截与 GitHub 在线更新。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.3 继续整合快照、稳定基线、决策报告、高风险脚本拦截与 GitHub 代理更新。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -396,11 +407,16 @@ const I18N = {
         manager: 'Manager',
         source_code: 'Source',
         update_notice: 'Update Notice',
-        update_notice_title: 'Auto snapshot dedupe and online updates',
-        update_notice_desc: 'Each boot session now keeps a single automatic snapshot. The WebUI includes GitHub entry points, and module metadata now supports GitHub Release-based online updates.',
+        update_notice_title: 'Auto snapshot cleanup and update checks',
+        update_notice_desc: 'Legacy auto snapshots stored as snap-*.txt are folded back into a single rolling auto snapshot. The WebUI now checks updates through the configured proxy.',
+        check_update: 'Check Updates',
+        checking_update: 'Checking updates...',
+        update_available: 'Update available',
+        update_up_to_date: 'Already on the latest version',
+        update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.2 continues the snapshot, baseline restore, decision report, high-risk script interception, and GitHub-based online update pass.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.3 continues the snapshot, baseline restore, decision report, high-risk script interception, and GitHub proxy update pass.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -816,7 +832,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.2' : 'Automatic Boot Rescue v3.2.2';
+        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.3' : 'Automatic Boot Rescue v3.2.3';
     }
 
     openExternal(url) {
@@ -834,12 +850,39 @@ done`;
         }
     }
 
+    proxiedUrl(url) {
+        if (!url) return '';
+        return url.startsWith(GIT_PROXY_PREFIX) ? url : `${GIT_PROXY_PREFIX}${url}`;
+    }
+
     openRepository() {
-        this.openExternal('https://github.com/jiayuxuan123/RescueX');
+        this.openExternal(this.proxiedUrl(REPO_URL));
     }
 
     openReleases() {
-        this.openExternal('https://github.com/jiayuxuan123/RescueX/releases');
+        this.openExternal(this.proxiedUrl(RELEASES_URL));
+    }
+
+    async checkUpdate() {
+        this.toast(this.t('checking_update'), '', 5000);
+        try {
+            const response = await fetch(this.proxiedUrl(UPDATE_JSON_URL), { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const meta = await response.json();
+            const remoteCode = parseInt(meta.versionCode, 10) || 0;
+            const remoteVersion = String(meta.version || '').trim() || '--';
+            if (remoteCode > APP_VERSION_CODE) {
+                const message = this.lang === 'zh'
+                    ? `当前版本 ${APP_VERSION}，发现新版本 ${remoteVersion}。是否前往下载？`
+                    : `Current version ${APP_VERSION}. New version ${remoteVersion} is available. Open download page?`;
+                const confirm = await this.confirmDialog(this.t('update_available'), message, this.t('btn_confirm'), 'btn-filled');
+                if (confirm) this.openExternal(this.proxiedUrl(meta.zipUrl || RELEASES_URL));
+                return;
+            }
+            this.toast(this.t('update_up_to_date'), 'success', 3500);
+        } catch (_) {
+            this.toast(this.t('update_check_failed'), 'error', 5000);
+        }
     }
 
     setupEasterEggs() {
