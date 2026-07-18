@@ -13,8 +13,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.2.3';
-const APP_VERSION_CODE = 32300;
+const APP_VERSION = 'v3.2.4';
+const APP_VERSION_CODE = 32400;
 const GIT_PROXY_PREFIX = 'https://gitjs.yunluo.de5.net/';
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
@@ -114,8 +114,8 @@ const I18N = {
         manager: '管理器',
         source_code: '源码',
         update_notice: '更新公告',
-        update_notice_title: '自动快照清理与在线检查更新',
-        update_notice_desc: '旧版本误存为 snap-*.txt 的自动快照会自动并入单一自动快照，WebUI 新增检查更新并统一走代理地址。',
+        update_notice_title: '快照删除与持久化彻底对齐',
+        update_notice_desc: '删除手动快照时会同步清理持久化副本，升级恢复后不再出现“删了又回来”的旧快照。',
         check_update: '检查更新',
         checking_update: '正在检查更新...',
         update_available: '发现新版本',
@@ -123,7 +123,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.3 继续整合快照、稳定基线、决策报告、高风险脚本拦截与 GitHub 代理更新。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.4 继续整合快照、稳定基线、决策报告、高风险脚本拦截与 GitHub 代理更新。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -407,8 +407,8 @@ const I18N = {
         manager: 'Manager',
         source_code: 'Source',
         update_notice: 'Update Notice',
-        update_notice_title: 'Auto snapshot cleanup and update checks',
-        update_notice_desc: 'Legacy auto snapshots stored as snap-*.txt are folded back into a single rolling auto snapshot. The WebUI now checks updates through the configured proxy.',
+        update_notice_title: 'Snapshot deletion fully matches persistence',
+        update_notice_desc: 'Deleting a manual snapshot now clears its persisted mirror too, so old snapshots do not come back after upgrade or restore.',
         check_update: 'Check Updates',
         checking_update: 'Checking updates...',
         update_available: 'Update available',
@@ -416,7 +416,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.3 continues the snapshot, baseline restore, decision report, high-risk script interception, and GitHub proxy update pass.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.4 continues the snapshot, baseline restore, decision report, high-risk script interception, and GitHub proxy update pass.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -832,7 +832,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.3' : 'Automatic Boot Rescue v3.2.3';
+        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.4' : 'Automatic Boot Rescue v3.2.4';
     }
 
     openExternal(url) {
