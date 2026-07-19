@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.8 - Action 入口
+# RescueX v3.2.9 - Action 入口
 # 兼容 KernelSU / KsuWebUI / MMRL / Magisk + APatch
 #
 # v3.0.1: WebUI 不可用时显示 CLI 状态信息（参考 BG 的 action.sh）
@@ -26,10 +26,16 @@ is_pkg_installed() {
     pm path "$1" > /dev/null 2>&1
 }
 
+is_foreground_pkg() {
+    pkg="$1"
+    dumpsys activity activities 2>/dev/null | grep -m1 'topResumedActivity' | grep -q "$pkg" && return 0
+    dumpsys window windows 2>/dev/null | grep -m1 'mCurrentFocus' | grep -q "$pkg"
+}
+
 # === CLI 状态显示（WebUI 不可用时的回退） ===
 show_cli_status() {
     echo "========================================="
-    echo "   RescueX v3.2.8 - 模块状态"
+    echo "   RescueX v3.2.9 - 模块状态"
     echo "========================================="
     echo ""
 
@@ -149,15 +155,21 @@ if is_pkg_installed "io.github.a13e300.ksuwebui"; then
 fi
 
 # 2. MMRL WebUIX
-if [ "$webui_launched" = "0" ] && is_pkg_installed "com.dergoogler.mmrl.wx"; then
+if [ "$webui_launched" = "0" ] && is_pkg_installed "com.dergoogler.mmrl.wx" && ! is_foreground_pkg "com.dergoogler.mmrl.wx"; then
     am start -n "com.dergoogler.mmrl.wx/.ui.activity.webui.WebUIActivity" -e MOD_ID "$MODID" 2>/dev/null
     [ $? -eq 0 ] && webui_launched=1
 fi
 
 # 3. MMRL 正式版
-if [ "$webui_launched" = "0" ] && is_pkg_installed "com.dergoogler.mmrl"; then
+if [ "$webui_launched" = "0" ] && is_pkg_installed "com.dergoogler.mmrl" && ! is_foreground_pkg "com.dergoogler.mmrl"; then
     am start -n "com.dergoogler.mmrl/.ui.activity.webui.WebUIActivity" -e MOD_ID "$MODID" 2>/dev/null
     [ $? -eq 0 ] && webui_launched=1
+fi
+
+if [ "$webui_launched" = "0" ] && { is_foreground_pkg "com.dergoogler.mmrl" || is_foreground_pkg "com.dergoogler.mmrl.wx"; }; then
+    echo "检测到当前已在 MMRL 内部，跳过二次拉起 WebUIActivity。"
+    echo "请直接返回模块页面后重新进入 WebUI。"
+    exit 0
 fi
 
 # 4. KernelSU 管理器原生

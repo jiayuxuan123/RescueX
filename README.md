@@ -34,13 +34,17 @@ Android 自动救砖模块，兼容 Magisk / KernelSU / APatch。
 | KernelSU      | 完全兼容 |
 | SukiSU Ultra  | 完全兼容 |
 | APatch        | 完全兼容 |
-| MMRL          | 完全兼容 |
+| MMRL v34242+ | 兼容 |
+
+说明：MMRL 的旧版本存在模块操作按钮相关的 Compose 崩溃。RescueX 已避免在 MMRL 前台通过 `action.sh` 二次拉起自身 WebUI，建议使用 `v34242+`。
 
 ## 使用
 
 ### 通过 WebUI（推荐）
 
 在 KernelSU 管理器 / Magisk v27+ 中打开 RescueX 模块页面，或通过 MMRL / KsuWebUI 打开 WebUI，即可进行所有配置和管理操作。
+
+如果当前前台已经是 MMRL，`action.sh` 会跳过再次拉起 MMRL 自己的 `WebUIActivity`，避免在部分机型上触发前台重入崩溃。
 
 ### 通过命令行
 
