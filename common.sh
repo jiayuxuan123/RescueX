@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r1 - common.sh
+# RescueX v3.3.0-r2 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.3.0-r1"
-RX_VERSION_CODE=33001
+RX_VERSION="v3.3.0-r2"
+RX_VERSION_CODE=33002
 
 # ============================================================
 # 路径初始化

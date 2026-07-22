@@ -1,4 +1,4 @@
-/* RescueX v3.3.0-r1 - WebUI 控制器
+/* RescueX v3.3.0-r2 - WebUI 控制器
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -13,8 +13,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.3.0-r1';
-const APP_VERSION_CODE = 33001;
+const APP_VERSION = 'v3.3.0-r2';
+const APP_VERSION_CODE = 33002;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -122,7 +122,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.3.0-r1：修复隐藏环境模块深层工作目录清理误报。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.3.0-r2：修复完整性立即检查按钮无响应。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -423,7 +423,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.3.0-r1: fixes false positives for nested hidden-environment module cleanup.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.3.0-r2: fixes the unresponsive Check Integrity Now button.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -678,7 +678,7 @@ class RescueXUI {
             'lockScriptDirs', 'openReleases', 'openRepository', 'rebootDevice',
             'reenableAllModules', 'refreshAuditLog', 'refreshLog', 'refreshModules',
             'refreshStats', 'removeCustomDir', 'resetRescueLevel', 'restoreBaseline',
-            'restoreSnapshot', 'saveConfig', 'saveCustomDirs', 'saveGoodModules',
+            'restoreSnapshot', 'runIntegrityCheck', 'saveConfig', 'saveCustomDirs', 'saveGoodModules',
             'saveWhitelist', 'selectAllModules', 'showFeatures', 'showPrivacy',
             'showUsage', 'takeSnapshot', 'testWatchdog', 'toggleEnabled',
             'togglePatchFlag', 'unfreezeApps'
@@ -860,7 +860,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.3.0-r1' : 'Automatic Boot Rescue v3.3.0-r1';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.3.0-r2' : 'Automatic Boot Rescue v3.3.0-r2';
     }
 
     openExternal(url) {
