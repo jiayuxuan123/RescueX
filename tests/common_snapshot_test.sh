@@ -207,6 +207,12 @@ reason=$(detect_destructive_script_content "$script_dir/mixed-module-cleanup.sh"
 assert_eq "rm-rf-sensitive-path" "$reason" "混合清理中的其他模块目录应继续拦截"
 pass "self module cleanup allowed"
 
+printf '%s\n' 'rm -rf "/data/adb/modules/.TA_utl"' > "$script_dir/hidden-self-module-cleanup.sh"
+if detect_destructive_script_content "$script_dir/hidden-self-module-cleanup.sh" /data/adb/modules/TA_utl >/dev/null; then
+    fail "隐藏自目录路径不应因替换顺序被误报"
+fi
+pass "hidden self path cleanup allowed"
+
 module_dir rescue-target
 disable_module_at_dir "$MODULE_BASE/rescue-target" rescue-target || fail "统一禁用函数应写入 disable 标记"
 assert_file_exists "$MODULE_BASE/rescue-target/disable" "统一禁用函数应确认 disable 标记存在"

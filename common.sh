@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r6 - common.sh
+# RescueX v3.3.0-r7 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.3.0-r6"
-RX_VERSION_CODE=33006
+RX_VERSION="v3.3.0-r7"
+RX_VERSION_CODE=33007
 
 # ============================================================
 # 路径初始化
@@ -901,9 +901,12 @@ clear_suspect_log() {
 }
 
 clear_script_risk_alert() {
-    restore_script_locks
-    rm -f "$SCRIPT_RISK_ALERT_FILE" 2>/dev/null
-    delete_persisted_state_file "script_lock_records.conf"
+    # 清除展示提醒，保留模块 disable 标记和被隔离脚本。
+    # 恢复脚本必须由显式的模块恢复动作触发，避免清提醒同时解除安全拦截。
+    if [ ! -f "$SCRIPT_RISK_ALERT_FILE" ]; then
+        return 2
+    fi
+    rm -f "$SCRIPT_RISK_ALERT_FILE" 2>/dev/null || return 1
     log_rescue_action "SCRIPT_RISK_ALERT_CLEAR" "manual"
     return 0
 }
@@ -1235,9 +1238,14 @@ manual_generate_rescue_decision_report() {
 }
 
 manual_clear_script_risk_alert() {
-    clear_script_risk_alert
-    printf 'OK\n'
-    return 0
+    if clear_script_risk_alert; then
+        printf 'ALERT_CLEARED=1\n'
+        return 0
+    fi
+    case "$?" in
+        2) printf 'ALERT_ALREADY_CLEAR=1\n'; return 0 ;;
+        *) printf 'ALERT_CLEARED=0\n'; return 1 ;;
+    esac
 }
 
 send_root_notification() {
@@ -1330,9 +1338,10 @@ detect_destructive_script_content() {
         esac
         if [ -n "$allowed_module_id" ]; then
             escaped_module_id=$(printf '%s' "$allowed_module_id" | sed 's/[.[\*^$\\]/\\&/g')
+            # 先替换隐藏目录，再替换可见目录，避免可见路径规则吃掉隐藏目录中的后缀。
             content=$(printf '%s\n' "$content" | sed \
-                -e "s#/data/adb/modules/${escaped_module_id}#MODULE_SELF#g" \
-                -e "s#/data/adb/modules/\\.${escaped_module_id}#MODULE_SELF#g")
+                -e "s#/data/adb/modules/\\.${escaped_module_id}#MODULE_SELF#g" \
+                -e "s#/data/adb/modules/${escaped_module_id}#MODULE_SELF#g")
         fi
     fi
 
