@@ -198,4 +198,36 @@ if detect_destructive_script_content "$script_dir/nested-find-delete.sh" >/dev/n
 fi
 pass "nested find cleanup allowed"
 
+cat > "$STATE_DIR/config.conf" <<'EOF'
+ENABLED=invalid
+DRY_RUN=yes
+PATCH_AUTO_ROLLBACK=no
+EOF
+read_config
+assert_eq true "$ENABLED" "非法 ENABLED 值应回退为启用"
+assert_eq true "$DRY_RUN" "yes 应归一化为 true"
+assert_eq false "$PATCH_AUTO_ROLLBACK" "no 应归一化为 false"
+pass "configuration boolean normalization"
+
+INTEGRITY_MANIFEST_FILE="$STATE_DIR/integrity.manifest"
+INTEGRITY_STATUS_FILE="$STATE_DIR/integrity_status"
+INTEGRITY_PID_FILE="$STATE_DIR/integrity_pid"
+for f in common.sh watchdog.sh integrity.sh post-fs-data.sh service.sh; do
+    printf '%s\n' test > "$MODDIR/$f"
+done
+integrity_build_manifest || fail "完整性基线应成功建立"
+grep -q '^#VERSION=0$' "$INTEGRITY_MANIFEST_FILE" || fail "完整性基线应包含版本标记"
+grep -q ' common.sh$' "$INTEGRITY_MANIFEST_FILE" || fail "完整性基线应包含核心文件"
+pass "integrity manifest creation"
+
+mkdir -p "$MODULE_BASE_KSU/duplicate" "$MODULE_BASE_AP/duplicate"
+: > "$MODULE_BASE_KSU/duplicate/disable"
+: > "$MODULE_BASE_AP/duplicate/disable"
+RESCUED_DISABLED_LIST="$STATE_DIR/rescued_disabled.list"
+printf 'duplicate\n' > "$RESCUED_DISABLED_LIST"
+reenable_all >/dev/null
+assert_file_missing "$MODULE_BASE_KSU/duplicate/disable" "同名 KSU 模块应恢复"
+assert_file_missing "$MODULE_BASE_AP/duplicate/disable" "同名 APatch 模块应恢复"
+pass "duplicate manager module recovery"
+
 printf 'ALL TESTS PASSED\n'

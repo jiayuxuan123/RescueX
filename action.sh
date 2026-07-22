@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r2 - Action 入口
+# RescueX v3.3.0-r3 - Action 入口
 # 兼容 KernelSU / KsuWebUI / MMRL / Magisk + APatch
 #
 # v3.0.1: WebUI 不可用时显示 CLI 状态信息（参考 BG 的 action.sh）
@@ -7,7 +7,9 @@
 MODID="RescueX"
 
 # 查找模块目录
-for d in /data/adb/modules/$MODID /data/adb/modules_update/$MODID; do
+for d in /data/adb/modules/$MODID /data/adb/modules_update/$MODID \
+         /data/adb/ksu/modules/$MODID /data/adb/ksu/modules_update/$MODID \
+         /data/adb/ap/modules/$MODID /data/adb/ap_modules/$MODID; do
     if [ -d "$d" ] && [ -f "$d/common.sh" ]; then
         MODDIR="$d"
         break
@@ -35,7 +37,7 @@ is_foreground_pkg() {
 # === CLI 状态显示（WebUI 不可用时的回退） ===
 show_cli_status() {
     echo "========================================="
-    echo "   RescueX v3.3.0-r2 - 模块状态"
+    echo "   RescueX v3.3.0-r3 - 模块状态"
     echo "========================================="
     echo ""
 

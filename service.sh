@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r2 - service.sh
+# RescueX v3.3.0-r3 - service.sh
 # 系统完全启动后执行，标记启动成功
 #
 # v3.0.1 改进：
@@ -112,10 +112,16 @@ update_module_prop() {
         if [ -f "$MODDIR/module.prop.bak" ]; then
             cp -f "$MODDIR/module.prop.bak" "$MODDIR/module.prop" 2>/dev/null
         fi
-        grep -v "^description=" "$MODDIR/module.prop" > "$MODDIR/module.prop.tmp" 2>/dev/null
-        echo "description=$new_desc" >> "$MODDIR/module.prop.tmp"
-        sync "$MODDIR/module.prop.tmp" 2>/dev/null
-        mv "$MODDIR/module.prop.tmp" "$MODDIR/module.prop"
+        local prop_tmp="$MODDIR/module.prop.tmp.$$"
+        if grep -v "^description=" "$MODDIR/module.prop" > "$prop_tmp" 2>/dev/null && \
+            echo "description=$new_desc" >> "$prop_tmp" && \
+            sync "$prop_tmp" 2>/dev/null && mv "$prop_tmp" "$MODDIR/module.prop"; then
+            chmod 0644 "$MODDIR/module.prop" 2>/dev/null
+        else
+            rm -f "$prop_tmp" 2>/dev/null
+            cp -f "$MODDIR/module.prop.bak" "$MODDIR/module.prop" 2>/dev/null
+            log "警告：module.prop 更新失败，已尝试恢复备份"
+        fi
     fi
 }
 
@@ -159,11 +165,16 @@ until [ "$_boot_done" = "1" ]; do
         WAIT_SEC=$((WAIT_SEC + 3))
     fi
     if [ "$WAIT_SEC" -ge "$WAIT_MAX" ]; then
-        log "警告：等待 boot_completed 超时 ${WAIT_MAX}s，但仍标记为成功"
+        log "警告：等待 boot_completed 超时 ${WAIT_MAX}s，保留 BOOTING 状态交给看门狗处理"
         break
     fi
 done
+if [ "$_boot_done" != "1" ]; then
+    log "系统启动未确认完成，跳过成功收尾"
+    exit 1
+fi
 unset _boot_done
+
 sleep 3
 log "系统启动完成（等待 ${WAIT_SEC}s + 3s）"
 

@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r2 - post-fs-data.sh
+# RescueX v3.3.0-r3 - post-fs-data.sh
 # 在系统启动早期执行，负责救砖逻辑核心
 #
 # v3.0.1 改进（专业级升级）：
@@ -81,7 +81,7 @@ handle_modules_update_stage() {
 replay_single_modules_update_backup() {
     local backup_dir="$1"
     local update_base="${MODULE_BASE:-/data/adb/modules}"
-    local mod_dir mod_id moved=0
+    local mod_dir mod_id moved=0 failed=0 old_dir temp_old
 
     [ -d "$backup_dir" ] || return 0
 
@@ -92,17 +92,32 @@ replay_single_modules_update_backup() {
         [ ! -d "$mod_dir" ] && continue
         mod_id=$(basename "$mod_dir")
         case "$mod_id" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
-        [ -d "$update_base/$mod_id" ] && rm -rf "$update_base/$mod_id" 2>/dev/null
+        old_dir="$update_base/$mod_id"
+        temp_old="${old_dir}.rescuex-old.$$"
+        if [ -d "$old_dir" ]; then
+            mv -f "$old_dir" "$temp_old" 2>/dev/null || {
+                log "警告：无法暂存旧模块，跳过回放: $mod_id"
+                failed=$((failed + 1))
+                continue
+            }
+        fi
         if mv -f "$mod_dir" "$update_base/" 2>/dev/null; then
             moved=$((moved + 1))
+            rm -rf "$temp_old" 2>/dev/null
             log "已回放更新模块: $mod_id"
         else
+            [ -d "$temp_old" ] && mv -f "$temp_old" "$old_dir" 2>/dev/null
+            failed=$((failed + 1))
             log "警告：回放更新模块失败: $mod_id"
         fi
     done
 
-    rm -rf "$backup_dir" 2>/dev/null
-    if [ "$moved" -gt 0 ]; then
+    if [ "$failed" -eq 0 ]; then
+        rm -rf "$backup_dir" 2>/dev/null
+    else
+        log "警告：$backup_dir 保留以便下次重试，失败模块数=$failed"
+    fi
+    if [ "$moved" -gt 0 ] && [ "$failed" -eq 0 ]; then
         sync
         log "已从 $backup_dir 回放 $moved 个更新模块，立即重启进入下一轮启动验证"
         reboot
@@ -247,7 +262,7 @@ if [ "$PATCH_DETECTED" = "true" ] || [ -f "$PATCH_FLAG_FILE" ]; then
     # 处于补丁更新窗口期，检查上次是否补丁启动失败
     if is_real_boot_failure; then
         # 这是补丁更新后的失败，增加补丁失败计数（不动普通 FAIL_COUNT）
-        if [ "$PREV_BOOT_RESULT" != "RESCUED" ] && [ "$PREV_SERVICE_STARTED" != "1" ]; then
+        if [ "$PREV_BOOT_RESULT" != "RESCUED" ]; then
             PATCH_FAIL_COUNT=$((PATCH_FAIL_COUNT + 1))
             write_patch_fail_count "$PATCH_FAIL_COUNT"
             log "补丁更新失败计数: $PATCH_FAIL_COUNT / $PATCH_FAIL_THRESHOLD"

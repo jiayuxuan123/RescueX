@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r2 - common.sh
+# RescueX v3.3.0-r3 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.3.0-r2"
-RX_VERSION_CODE=33002
+RX_VERSION="v3.3.0-r3"
+RX_VERSION_CODE=33003
 
 # ============================================================
 # 路径初始化
@@ -376,6 +376,14 @@ read_config() {
     case "$WATCHDOG_POLL_INTERVAL_SEC" in ''|*[!0-9]*) WATCHDOG_POLL_INTERVAL_SEC=2 ;; esac
     case "$INTEGRITY_INTERVAL_MIN_SEC" in ''|*[!0-9]*) INTEGRITY_INTERVAL_MIN_SEC=60 ;; esac
 
+    case "$ENABLED" in true|1|yes) ENABLED=true ;; false|0|no) ENABLED=false ;; *) ENABLED=true ;; esac
+    case "$LOG_ENABLED" in true|1|yes) LOG_ENABLED=true ;; false|0|no) LOG_ENABLED=false ;; *) LOG_ENABLED=true ;; esac
+    case "$DRY_RUN" in true|1|yes) DRY_RUN=true ;; false|0|no) DRY_RUN=false ;; *) DRY_RUN=false ;; esac
+    case "$PROGRESSIVE_RESCUE" in true|1|yes) PROGRESSIVE_RESCUE=true ;; false|0|no) PROGRESSIVE_RESCUE=false ;; *) PROGRESSIVE_RESCUE=true ;; esac
+    case "$AUTO_REENABLE" in true|1|yes) AUTO_REENABLE=true ;; false|0|no) AUTO_REENABLE=false ;; *) AUTO_REENABLE=false ;; esac
+    case "$PATCH_AUTO_ROLLBACK" in true|1|yes) PATCH_AUTO_ROLLBACK=true ;; false|0|no) PATCH_AUTO_ROLLBACK=false ;; *) PATCH_AUTO_ROLLBACK=true ;; esac
+    case "$INTEGRITY_CHECK_ENABLED" in true|1|yes) INTEGRITY_CHECK_ENABLED=true ;; false|0|no) INTEGRITY_CHECK_ENABLED=false ;; *) INTEGRITY_CHECK_ENABLED=true ;; esac
+
     # 范围限制（2>/dev/null 防止非数字比较报错）
     [ "$REBOOT_THRESHOLD" -lt 1 ] 2>/dev/null && REBOOT_THRESHOLD=1
     [ "$REBOOT_THRESHOLD" -gt 10 ] 2>/dev/null && REBOOT_THRESHOLD=10
@@ -396,6 +404,7 @@ read_config() {
     [ "$WATCHDOG_POLL_INTERVAL_SEC" -gt 10 ] 2>/dev/null && WATCHDOG_POLL_INTERVAL_SEC=10
     [ "$INTEGRITY_INTERVAL_MIN_SEC" -lt 60 ] 2>/dev/null && INTEGRITY_INTERVAL_MIN_SEC=60
     [ "$INTEGRITY_INTERVAL_MIN_SEC" -gt 300 ] 2>/dev/null && INTEGRITY_INTERVAL_MIN_SEC=300
+    return 0
 }
 
 integrity_target_files() {
@@ -425,19 +434,28 @@ integrity_write_status() {
 }
 
 integrity_build_manifest() {
-    local name hash version
+    local name hash version hashed=0 missing=0
     version=$(grep '^versionCode=' "$MODDIR/module.prop" 2>/dev/null | cut -d= -f2)
     case "$version" in ''|*[!0-9]*) version=0 ;; esac
     mkdir -p "$STATE_DIR" 2>/dev/null
     printf '#VERSION=%s\n' "$version" > "$INTEGRITY_MANIFEST_FILE.tmp.$$"
     while IFS= read -r name; do
-        [ -f "$MODDIR/$name" ] || continue
+        if [ ! -f "$MODDIR/$name" ]; then
+            missing=$((missing + 1))
+            continue
+        fi
         hash=$(integrity_hash_file "$MODDIR/$name")
-        [ -n "$hash" ] && printf '%s  %s\n' "$hash" "$name" >> "$INTEGRITY_MANIFEST_FILE.tmp.$$"
+        case "$hash" in
+            [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]* )
+                [ "${#hash}" -eq 64 ] || continue
+                printf '%s  %s\n' "$hash" "$name" >> "$INTEGRITY_MANIFEST_FILE.tmp.$$"
+                hashed=$((hashed + 1))
+                ;;
+        esac
     done << EOF
 $(integrity_target_files)
 EOF
-    [ -s "$INTEGRITY_MANIFEST_FILE.tmp.$$" ] || { rm -f "$INTEGRITY_MANIFEST_FILE.tmp.$$"; return 1; }
+    [ "$missing" -eq 0 ] && [ "$hashed" -gt 0 ] || { rm -f "$INTEGRITY_MANIFEST_FILE.tmp.$$"; return 1; }
     chmod 0600 "$INTEGRITY_MANIFEST_FILE.tmp.$$" 2>/dev/null
     mv "$INTEGRITY_MANIFEST_FILE.tmp.$$" "$INTEGRITY_MANIFEST_FILE"
 }
@@ -484,7 +502,23 @@ start_integrity_daemon() {
     [ "$INTEGRITY_CHECK_ENABLED" = "true" ] || return 0
     integrity_pid_is_alive && return 0
     [ -x "$INTEGRITY_SCRIPT" ] || return 1
+    mkdir "$STATE_DIR/.integrity_start.lock" 2>/dev/null || return 0
+    integrity_pid_is_alive && { rmdir "$STATE_DIR/.integrity_start.lock" 2>/dev/null; return 0; }
     sh "$INTEGRITY_SCRIPT" >/dev/null 2>&1 < /dev/null &
+}
+
+stop_integrity_daemon() {
+    local pid cmdline
+    pid=$(cat "$INTEGRITY_PID_FILE" 2>/dev/null)
+    case "$pid" in ''|*[!0-9]*) pid=0 ;; esac
+    if [ "$pid" != "0" ] && kill -0 "$pid" 2>/dev/null; then
+        cmdline=$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ')
+        case "$cmdline" in
+            *integrity.sh*) kill "$pid" 2>/dev/null ;;
+        esac
+    fi
+    rm -f "$INTEGRITY_PID_FILE" "$INTEGRITY_STATUS_FILE" "$INTEGRITY_MANIFEST_FILE" 2>/dev/null
+    rmdir "$STATE_DIR/.integrity_start.lock" 2>/dev/null
 }
 
 # ============================================================
@@ -735,6 +769,13 @@ write_patch_fail_count() {
 
 # 设置补丁更新标记（供 WebUI 调用）
 set_patch_flag() {
+    mkdir -p "$PATCH_BACKUP_DIR" 2>/dev/null
+    local snapshot snapshot_name
+    snapshot=$(take_snapshot auto 2>/dev/null)
+    if [ -n "$snapshot" ] && [ -f "$snapshot" ]; then
+        snapshot_name="snap-patch-$(date +%s)-$$.txt"
+        cp "$snapshot" "$PATCH_BACKUP_DIR/$snapshot_name" 2>/dev/null || log "警告：补丁前快照保存失败"
+    fi
     echo "1" > "$PATCH_FLAG_FILE" 2>/dev/null
     sync "$PATCH_FLAG_FILE" 2>/dev/null
     log "补丁更新标记已设置（手动）"
@@ -1306,14 +1347,22 @@ _quarantine_script_file() {
     mkdir -p "$SCRIPT_RISK_QUARANTINE_DIR" 2>/dev/null
     local mode quarantine
     mode=$(_get_file_mode "$target")
-    quarantine="$SCRIPT_RISK_QUARANTINE_DIR/$(basename "$target").$(date +%s 2>/dev/null || echo 0).blocked"
+    quarantine="$SCRIPT_RISK_QUARANTINE_DIR/$(basename "$target").$(date +%s 2>/dev/null || echo 0).$$.blocked"
+    local suffix=0
+    while [ -e "$quarantine" ]; do
+        suffix=$((suffix + 1))
+        quarantine="$SCRIPT_RISK_QUARANTINE_DIR/$(basename "$target").$(date +%s 2>/dev/null || echo 0).$$.$suffix.blocked"
+    done
     _record_script_lock "$target" "$mode" "$quarantine"
-    mv -f "$target" "$quarantine" 2>/dev/null || {
+    if mv -f "$target" "$quarantine" 2>/dev/null; then
+        chmod 0600 "$quarantine" 2>/dev/null || return 1
+        return 0
+    else
         chmod 000 "$target" 2>/dev/null
-        cp "$target" "$quarantine" 2>/dev/null
-    }
-    chmod 0600 "$quarantine" 2>/dev/null
-    return 0
+        cp "$target" "$quarantine" 2>/dev/null || return 1
+        chmod 0600 "$quarantine" 2>/dev/null || return 1
+        return 0
+    fi
 }
 
 scan_and_block_destructive_scripts() {
@@ -1846,18 +1895,16 @@ reenable_all() {
             case "$mod_id" in \#*) continue ;; esac
             case "$mod_id" in *[!A-Za-z0-9._-]*) continue ;; esac
             [ "$mod_id" = "$SELF_ID" ] && continue
-            # 在所有 base 中查找
-            local found_dir=""
+            # 在所有管理器目录中恢复同名模块，避免只恢复第一个目录。
             for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
                 [ -z "$base" ] || [ ! -d "$base" ] && continue
                 if [ -d "$base/$mod_id" ] && [ -f "$base/$mod_id/disable" ]; then
-                    found_dir="$base/$mod_id"
-                    break
+                    rm -f "$base/$mod_id/disable" 2>/dev/null && {
+                        log "已恢复: $mod_id ($base)"
+                        enabled=$((enabled + 1))
+                    }
                 fi
             done
-            if [ -n "$found_dir" ]; then
-                rm -f "${found_dir}/disable" 2>/dev/null && { log "已恢复: $mod_id"; enabled=$((enabled + 1)); }
-            fi
         done < "$RESCUED_DISABLED_LIST"
         rm -f "$RESCUED_DISABLED_LIST" 2>/dev/null
         delete_persisted_state_file "rescued_disabled.list"

@@ -3,18 +3,19 @@
 MODDIR="$(cd "${0%/*}" 2>/dev/null && pwd)"
 [ -f "$MODDIR/common.sh" ] || exit 1
 . "$MODDIR/common.sh"
+cleanup_integrity() {
+    local current
+    current=$(cat "$INTEGRITY_PID_FILE" 2>/dev/null)
+    [ "$current" = "$$" ] && rm -f "$INTEGRITY_PID_FILE"
+    rmdir "$STATE_DIR/.integrity_start.lock" 2>/dev/null
+    exit 0
+}
+trap cleanup_integrity TERM INT EXIT
 read_config
 [ "$INTEGRITY_CHECK_ENABLED" = "true" ] || exit 0
 
 echo $$ > "$INTEGRITY_PID_FILE"
 chmod 0600 "$INTEGRITY_PID_FILE" 2>/dev/null
-cleanup_integrity() {
-    local current
-    current=$(cat "$INTEGRITY_PID_FILE" 2>/dev/null)
-    [ "$current" = "$$" ] && rm -f "$INTEGRITY_PID_FILE"
-    exit 0
-}
-trap cleanup_integrity TERM INT EXIT
 
 integrity_check_once
 while :; do

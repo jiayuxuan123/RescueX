@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r2 - uninstall.sh
+# RescueX v3.3.0-r3 - uninstall.sh
 # 兼容 Magisk / KernelSU / APatch 三套管理器
 # 彻底清理看门狗进程和所有临时文件
 #
@@ -28,7 +28,8 @@ STATE_DIR="$MODDIR/webroot/state"
 if [ -f "$MODDIR/common.sh" ]; then
     . "$MODDIR/common.sh"
     stop_watchdog
-    echo "- 看门狗已通过 common.sh 停止"
+    stop_integrity_daemon
+    echo "- 看门狗和完整性守护已通过 common.sh 停止"
 else
     if [ -f "$STATE_DIR/watchdog_pid" ]; then
         WD_PID=$(cat "$STATE_DIR/watchdog_pid" 2>/dev/null)

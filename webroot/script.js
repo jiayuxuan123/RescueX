@@ -1,4 +1,4 @@
-/* RescueX v3.3.0-r2 - WebUI 控制器
+/* RescueX v3.3.0-r3 - WebUI 控制器
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -13,8 +13,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.3.0-r2';
-const APP_VERSION_CODE = 33002;
+const APP_VERSION = 'v3.3.0-r3';
+const APP_VERSION_CODE = 33003;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -122,7 +122,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.3.0-r2：修复完整性立即检查按钮无响应。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.3.0-r3：完成整包启动链、守护进程、回滚和 WebUI 稳定性修复。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -423,7 +423,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.3.0-r2: fixes the unresponsive Check Integrity Now button.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.3.0-r3: hardens the boot chain, daemon lifecycle, rollback, and WebUI operations.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -691,14 +691,22 @@ class RescueXUI {
         document.body.addEventListener('click', (e) => {
             const target = e.target.closest('[data-action]');
             if (target) {
-                e.preventDefault();
                 const action = target.dataset.action;
+                if (target.matches('input[type="checkbox"]')) {
+                    if (this.allowedActions.has(action) && typeof this[action] === 'function') {
+                        queueMicrotask(() => this[action](e, target));
+                    }
+                    return;
+                }
+                e.preventDefault();
                 if (this.allowedActions.has(action) && typeof this[action] === 'function') this[action](e, target);
                 return;
             }
             // v2.7: 单模块切换按钮
             const modToggle = e.target.closest('.mod-toggle');
             if (modToggle) {
+                e.preventDefault();
+                e.stopPropagation();
                 const modId = modToggle.dataset.modId;
                 const enable = modToggle.dataset.modEnabled !== '1';
                 this.toggleModule(modId, enable);
@@ -860,7 +868,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.3.0-r2' : 'Automatic Boot Rescue v3.3.0-r2';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.3.0-r3' : 'Automatic Boot Rescue v3.3.0-r3';
     }
 
     openExternal(url) {
@@ -1683,9 +1691,13 @@ done`;
         );
         if (!confirm) return;
         try {
-            await this.exec(`MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null && manual_delete_snapshot "${snapFile}"`);
+            const result = await this.exec(`MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null && manual_delete_snapshot "${snapFile}"; echo RESULT=$?`);
+            if (!result.includes('RESULT=0')) {
+                this.toast(this.t('snapshot_failed'), 'error');
+                return;
+            }
             this.toast(this.t('snapshot_deleted'), 'success');
-            this.loadSnapshots();
+            await this.loadSnapshots();
         } catch (e) {
             this.toast(this.t('snapshot_failed'), 'error');
         }
@@ -1815,7 +1827,8 @@ mv config.conf.tmp.$$ config.conf
             const configRaw = await this.exec(`cat "${this.confFile}" 2>/dev/null`);
             const whitelistRaw = await this.exec(`cat "${this.whitelistFile}" 2>/dev/null`);
             const data = {
-                version: '3.2.0',
+                version: APP_VERSION,
+                versionCode: APP_VERSION_CODE,
                 exported_at: new Date().toISOString(),
                 config: this.parseKV(configRaw),
                 whitelist: whitelistRaw
@@ -2947,11 +2960,19 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
 
     // === v2.7: 单模块启用/禁用切换 ===
     async toggleModule(modId, enable) {
+        if (!MODULE_ID_RE.test(String(modId || '')) || typeof enable !== 'boolean') {
+            this.toast(this.t('save_failed'), 'error');
+            return;
+        }
         const action = enable ? 'enable' : 'disable';
         try {
             // Source common.sh to use toggle_single_module function
-            const cmd = `. "${this.basePath}/common.sh" && toggle_single_module "${modId}" ${action}`;
+            const cmd = `. "${this.basePath}/common.sh" && toggle_single_module "${modId}" ${action}; echo RESULT=$?`;
             const result = await this.exec(cmd, EXEC_DEFAULT_TIMEOUT_MS);
+            if (!result.includes('RESULT=0')) {
+                this.toast(this.t('save_failed'), 'error');
+                return;
+            }
             this.toast(enable ? `${modId} ${this.lang === 'zh' ? '已启用' : 'enabled'}` : `${modId} ${this.lang === 'zh' ? '已禁用' : 'disabled'}`);
             // Refresh module lists
             await Promise.all([this.loadModules(), this.loadDisabledModules()]);
@@ -3064,7 +3085,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 this.toast(this.t('save_failed'), 'error');
                 return;
             }
-            const result = await this.exec(`TMP_FILE="${this.stateDir}/.custom_dirs.upload.$$" && printf '%s' '${b64}' | base64 -d > "$TMP_FILE" && . "${this.basePath}/common.sh" && save_custom_dirs_file "$TMP_FILE" && rm -f "$TMP_FILE"`);
+            const result = await this.exec(`TMP_FILE="${this.stateDir}/.custom_dirs.upload.$$"; trap 'rm -f "$TMP_FILE"' EXIT; umask 077; printf '%s' '${b64}' | base64 -d > "$TMP_FILE" && . "${this.basePath}/common.sh" && save_custom_dirs_file "$TMP_FILE"`);
             if (result.includes('SAVED=')) {
                 this.toast(this.t('saved'), 'success');
                 if (invalid > 0) {

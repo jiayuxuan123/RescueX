@@ -38,7 +38,7 @@ No build step required. The module directory itself is the importable package:
 zip -r RescueX-vX.Y.Z-import.zip \
   META-INF module.prop customize.sh \
   post-fs-data.sh service.sh uninstall.sh \
-  action.sh common.sh watchdog.sh webroot
+  action.sh common.sh watchdog.sh integrity.sh webroot
 ```
 
 ### Testing
