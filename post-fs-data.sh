@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r7 - post-fs-data.sh
+# RescueX v3.4.0-r1-beta - post-fs-data.sh
 # 在系统启动早期执行，负责救砖逻辑核心
 #
 # v3.0.1 改进（专业级升级）：
@@ -259,7 +259,7 @@ fi
 # 修复：补丁窗口期内，仅递增补丁失败计数，不动普通 FAIL_COUNT
 read_patch_fail_count
 trigger_rescue_flag=0
-if [ "$PATCH_DETECTED" = "true" ] || [ -f "$PATCH_FLAG_FILE" ]; then
+if [ "$PATCH_DETECTED" = "true" ] || patch_flag_active; then
     # 处于补丁更新窗口期，检查上次是否补丁启动失败
     if is_real_boot_failure; then
         # 这是补丁更新后的失败，增加补丁失败计数（不动普通 FAIL_COUNT）
@@ -271,10 +271,13 @@ if [ "$PATCH_DETECTED" = "true" ] || [ -f "$PATCH_FLAG_FILE" ]; then
             # 达到补丁失败阈值，触发轻量级回滚（不清整机数据）
             if [ "$PATCH_FAIL_COUNT" -ge "$PATCH_FAIL_THRESHOLD" ] && [ "$PATCH_AUTO_ROLLBACK" = "true" ]; then
                 log "补丁失败次数达阈值，触发补丁回滚（保留用户数据）"
-                patch_rollback
-                write_patch_fail_count 0
-                # v2.7.0: 补丁回滚后不重置 PREV_FAIL_COUNT 为 0，
-                # 而是保持原值，避免掩盖普通启动失败
+                if patch_rollback; then
+                    write_patch_fail_count 0
+                    log "补丁回滚已提交，失败计数已清零"
+                else
+                    log "补丁回滚未完成：保留标记和失败计数，等待人工复核"
+                fi
+                # 不重置 PREV_FAIL_COUNT，避免掩盖普通启动失败
             fi
         fi
     fi
@@ -309,8 +312,11 @@ else
     # AUTO_REENABLE: 救砖后下次启动自动恢复
     if [ "$AUTO_REENABLE" = "true" ] && [ "$PREV_BOOT_RESULT" = "RESCUED" ]; then
         log "AUTO_REENABLE 启用，自动恢复被救砖禁用的模块"
-        reenable_all
-        PREV_FAIL_COUNT=0
+        if reenable_all; then
+            PREV_FAIL_COUNT=0
+        else
+            log "AUTO_REENABLE 已拒绝：恢复证据不完整"
+        fi
     fi
 fi
 

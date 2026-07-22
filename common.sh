@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r7 - common.sh
+# RescueX v3.4.0-r1-beta - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.3.0-r7"
-RX_VERSION_CODE=33007
+RX_VERSION="v3.4.0-r1-beta"
+RX_VERSION_CODE=34001
 
 # ============================================================
 # 路径初始化
@@ -322,7 +322,7 @@ list_rescue_audit() {
 # ============================================================
 # 配置读取（一次性读入，避免多次 grep）
 # ============================================================
-read_config() {
+_read_config_legacy() {
     # 默认值
     REBOOT_THRESHOLD=3
     BOOT_TIMEOUT_SEC=90
@@ -460,7 +460,7 @@ EOF
     mv "$INTEGRITY_MANIFEST_FILE.tmp.$$" "$INTEGRITY_MANIFEST_FILE"
 }
 
-integrity_check_once() {
+_integrity_check_once_legacy() {
     local name expected actual missing=0 changed=0 version manifest_version
     version=$(grep '^versionCode=' "$MODDIR/module.prop" 2>/dev/null | cut -d= -f2)
     case "$version" in ''|*[!0-9]*) version=0 ;; esac
@@ -695,7 +695,7 @@ detect_ota() {
 # 与底层 OTA（detect_ota）隔离，互不干扰
 # 返回 0=检测到补丁更新 1=未检测到
 # ============================================================
-detect_patch_update() {
+_detect_patch_update_legacy() {
     # 优先级 1: 用户/外部工具手动设置的持久标记
     if [ -f "$PATCH_FLAG_FILE" ]; then
         local flag
@@ -837,7 +837,7 @@ _normalize_safe_dir() {
     esac
 }
 
-is_safe_custom_dir() {
+_is_safe_custom_dir_legacy() {
     local dir normalized prefix norm_prefix
     dir="$1"
     [ -z "$dir" ] && return 1
@@ -1491,7 +1491,7 @@ scan_and_block_destructive_scripts() {
 
 # 补丁回滚逻辑（轻量级，不清整机数据）
 # v2.4 核心防数据丢失机制
-patch_rollback() {
+_patch_rollback_unsafe_legacy() {
     log "===== 触发补丁回滚（轻量级）====="
 
     # 策略 1: 如果存在补丁前快照，恢复模块状态（不动用户数据）
@@ -1965,51 +1965,10 @@ full_rescue() {
 }
 
 # 恢复被救砖禁用的模块（仅恢复 rescued_disabled.list 中记录的）
-# v2.7.0 LOG-002 修复：原实现恢复所有被禁用模块（含用户手动禁用的），
-# 现改为仅恢复救砖操作本身禁用的模块
-reenable_all() {
-    log "恢复救砖禁用的模块"
-    local enabled=0
-
-    # 优先使用 rescued_disabled.list（精确恢复）
-    if [ -f "$RESCUED_DISABLED_LIST" ]; then
-        local mod_id
-        while IFS= read -r mod_id || [ -n "$mod_id" ]; do
-            [ -z "$mod_id" ] && continue
-            case "$mod_id" in \#*) continue ;; esac
-            case "$mod_id" in *[!A-Za-z0-9._-]*) continue ;; esac
-            [ "$mod_id" = "$SELF_ID" ] && continue
-            # 在所有管理器目录中恢复同名模块，避免只恢复第一个目录。
-            for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
-                [ -z "$base" ] || [ ! -d "$base" ] && continue
-                if [ -d "$base/$mod_id" ] && [ -f "$base/$mod_id/disable" ]; then
-                    rm -f "$base/$mod_id/disable" 2>/dev/null && {
-                        log "已恢复: $mod_id ($base)"
-                        enabled=$((enabled + 1))
-                    }
-                fi
-            done
-        done < "$RESCUED_DISABLED_LIST"
-        rm -f "$RESCUED_DISABLED_LIST" 2>/dev/null
-        delete_persisted_state_file "rescued_disabled.list"
-        log "精确恢复完成: $enabled 个（基于 rescued_disabled.list）"
-    else
-        # 兜底：无 rescued_disabled.list 时恢复所有被禁用模块
-        log "未找到 rescued_disabled.list，回退到恢复所有被禁用模块"
-        local base mod_id mod_dir
-        for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
-            [ -z "$base" ] || [ ! -d "$base" ] && continue
-            for mod_dir in "$base"/*/; do
-                [ ! -d "$mod_dir" ] && continue
-                mod_id=$(basename "$mod_dir")
-                [ "$mod_id" = "$SELF_ID" ] && continue
-                [ ! -f "${mod_dir}disable" ] && continue
-                rm -f "${mod_dir}disable" 2>/dev/null && { log "已恢复: $mod_id"; enabled=$((enabled + 1)); }
-            done
-        done
-        log "兜底恢复完成: $enabled 个"
-    fi
-    restore_script_locks permissions
+# 历史恢复实现已在 v3.4 retire；安全恢复仅可依据明确的救砖清单。
+_reenable_all_unsafe_legacy() {
+    # Retired in v3.4: never scan or restore globally disabled modules.
+    return 1
 }
 
 # ============================================================
@@ -2062,15 +2021,18 @@ stop_watchdog() {
 }
 
 # 看门狗触发的救砖逻辑（在 watchdog.sh 子进程中调用）
-watchdog_trigger() {
+_watchdog_trigger_unlocked() {
     log "[WD] 看门狗超时触发救砖"
 
     # 重新读取配置和白名单（触发时配置可能已变）
     read_config
     read_whitelist
 
-    # v3.0.0: 使用三级渐进式救砖
-    three_level_rescue
+    # 三级救砖失败（尤其是 Level 2 被安全降级）时，绝不能伪造 RESCUED 状态或重启。
+    if ! three_level_rescue; then
+        log "[WD] 救砖动作未完成；保留 BOOTING 状态和事务记录，等待人工处理"
+        return 1
+    fi
 
     # 标记状态为 RESCUED，更新救砖计数
     local rescue_count=0
@@ -2125,18 +2087,9 @@ STAT
     kill -9 $SYNC_PID 2>/dev/null
     wait $SYNC_PID 2>/dev/null
 
-    # 多级重启兜底（Compat-2: Android 12+ sysrq 可能被禁用）
-    setprop sys.powerctl reboot 2>/dev/null
-    sleep 5
-    reboot 2>/dev/null
-    sleep 5
-    # 兜底: 强制重启到 recovery 再重启
-    setprop sys.powerctl reboot,recovery 2>/dev/null
-    sleep 10
-    # 最后手段: sysrq-trigger（需先开启 sysrq）
-    # SEC-003: sysrq 值从 1 改为 128（仅允许重启命令，不允许所有命令）
-    echo 128 > /proc/sys/kernel/sysrq 2>/dev/null
-    echo b > /proc/sysrq-trigger 2>/dev/null
+    # v3.4 安全策略：自动路径只请求一次普通重启；禁止自动进入 Recovery 或使用 SysRq。
+    log "[WD] 救砖状态已提交，请求一次普通重启"
+    reboot 2>/dev/null || log "[WD] 普通重启请求失败；保留事务记录，等待人工处理"
 }
 
 # ============================================================
@@ -3352,53 +3305,9 @@ full_rescue_with_scripts() {
 # 级别 2: APP 解冻（最后手段）
 # 删除 package-restrictions.xml，解冻被 PM 冻结的应用
 # 某些模块可能冻结了关键系统应用导致无法启动
-app_unfreeze() {
-    log "===== 级别 2: APP 解冻 ====="
-
-    local unfreeze_done=0
-
-    # 主要目标：/data/system/users/0/package-restrictions.xml
-    if [ -f "/data/system/users/0/package-restrictions.xml" ]; then
-        if rm -f "/data/system/users/0/package-restrictions.xml" 2>/dev/null; then
-            log "已删除 package-restrictions.xml（用户 0）"
-            unfreeze_done=1
-        else
-            log "删除 package-restrictions.xml（用户 0）失败"
-        fi
-    fi
-
-    # 多用户环境：尝试所有用户
-    for user_dir in /data/system/users/*/; do
-        [ ! -d "$user_dir" ] && continue
-        local pkg_rest="${user_dir}package-restrictions.xml"
-        if [ -f "$pkg_rest" ]; then
-            if rm -f "$pkg_rest" 2>/dev/null; then
-                log "已删除: $pkg_rest"
-                unfreeze_done=1
-            fi
-        fi
-    done
-
-    # 额外清理：部分厂商/ROM 可能有其他限制文件
-    if [ -f "/data/system/users/0/package-restrictions.xml.backup" ]; then
-        rm -f "/data/system/users/0/package-restrictions.xml.backup" 2>/dev/null
-        log "已删除备份限制文件"
-    fi
-
-    if [ "$unfreeze_done" = "1" ]; then
-        log "APP 解冻完成，准备重启"
-        log_rescue_action "APP_UNFREEZE" "package-restrictions.xml deleted"
-        sync
-        APP_UNFREEZE_LAST_RESULT="DONE"
-    else
-        log "未发现需要解冻的限制文件"
-        log_rescue_action "APP_UNFREEZE_SKIP" "no restrictions found"
-        APP_UNFREEZE_LAST_RESULT="SKIP"
-    fi
-
-    # 重置救砖级别回到 0（解冻后若成功，下次从嫌疑禁用开始）
-    write_rescue_level 0
-    return 0
+_app_unfreeze_unsafe_legacy() {
+    # Retired in v3.4: never delete Package Manager restriction files.
+    return 1
 }
 
 # 三级救砖编排器：根据当前救砖级别自动选择策略
@@ -3407,7 +3316,7 @@ app_unfreeze() {
 # 原逻辑：suspect_rescue 失败后只升级级别号，等下次启动再全量救砖
 # 问题：看门狗已触发说明系统无法启动，不应再等一轮重启
 # 修复：suspect_rescue 失败后立即执行 full_rescue_with_scripts
-three_level_rescue() {
+_three_level_rescue_unlocked() {
     read_rescue_level
 
     case "$RESCUE_LEVEL" in
@@ -3440,3 +3349,224 @@ three_level_rescue() {
 # 初始化
 # ============================================================
 _rescuex_init_paths
+
+
+# ============================================================
+# v3.4.0-r1-beta：安全状态机覆盖层
+# 所有高风险自动路径默认 fail-closed。
+# ============================================================
+RX_STATE_SCHEMA_VERSION=2
+RESCUE_LOCK_TTL_SEC=120
+
+_rescuex_now_sec() {
+    local now
+    now=$(date +%s 2>/dev/null)
+    case "$now" in ''|*[!0-9]*) now=$(get_uptime_sec) ;; esac
+    printf '%s' "$now"
+}
+
+_rescuex_atomic_private_write() {
+    local file="$1" content="$2" tmp="${1}.tmp.$$"
+    mkdir -p "${file%/*}" 2>/dev/null || return 1
+    # 调用方用 \n 构造键值内容；按转义写入，确保状态文件保持一行一个字段。
+    printf '%b' "$content" > "$tmp" || return 1
+    chmod 0600 "$tmp" 2>/dev/null
+    sync "$tmp" 2>/dev/null
+    mv "$tmp" "$file" || return 1
+    chmod 0600 "$file" 2>/dev/null
+}
+
+rescue_lock_acquire() {
+    [ "${RESCUE_LOCK_HELD:-false}" = true ] && return 0
+    local now lock owner pid born age
+    now=$(_rescuex_now_sec); lock="$STATE_DIR/.rescue.lock"
+    if mkdir "$lock" 2>/dev/null; then
+        _rescuex_atomic_private_write "$lock/owner" "PID=$$\nCREATED_AT=$now\nROLE=${1:-unknown}\n" || { rmdir "$lock" 2>/dev/null; return 1; }
+        RESCUE_LOCK_DIR="$lock"; RESCUE_LOCK_HELD=true; return 0
+    fi
+    owner="$lock/owner"; pid=$(grep '^PID=' "$owner" 2>/dev/null | cut -d= -f2); born=$(grep '^CREATED_AT=' "$owner" 2>/dev/null | cut -d= -f2)
+    case "$pid" in ''|*[!0-9]*) pid=0 ;; esac
+    case "$born" in ''|*[!0-9]*) born=0 ;; esac
+    age=$((now-born)); [ "$age" -lt 0 ] 2>/dev/null && age=0
+    # Only reclaim locks that are both expired and have no live owner.
+    if [ "$age" -gt "$RESCUE_LOCK_TTL_SEC" ] && { [ "$pid" = 0 ] || ! kill -0 "$pid" 2>/dev/null; }; then
+        rm -f "$owner" 2>/dev/null; rmdir "$lock" 2>/dev/null
+        mkdir "$lock" 2>/dev/null || return 1
+        _rescuex_atomic_private_write "$lock/owner" "PID=$$\nCREATED_AT=$now\nROLE=${1:-unknown}\n" || return 1
+        RESCUE_LOCK_DIR="$lock"; RESCUE_LOCK_HELD=true
+        log "已回收无活动证据的过期救砖锁（pid=$pid age=${age}s）"
+        return 0
+    fi
+    log "拒绝并发高风险操作：救砖锁仍有效（pid=$pid age=${age}s）"
+    return 1
+}
+
+rescue_lock_release() {
+    [ "${RESCUE_LOCK_HELD:-false}" = true ] || return 0
+    local pid
+    pid=$(grep '^PID=' "$RESCUE_LOCK_DIR/owner" 2>/dev/null | cut -d= -f2)
+    [ "$pid" = "$$" ] || return 1
+    rm -f "$RESCUE_LOCK_DIR/owner" 2>/dev/null
+    rmdir "$RESCUE_LOCK_DIR" 2>/dev/null
+    RESCUE_LOCK_HELD=false
+}
+
+rescue_transaction_begin() {
+    local action="$1" now
+    now=$(_rescuex_now_sec); RESCUE_TRANSACTION_ID="rx-${now}-$$"
+    _rescuex_atomic_private_write "$STATE_DIR/rescue.plan" "SCHEMA=$RX_STATE_SCHEMA_VERSION\nID=$RESCUE_TRANSACTION_ID\nACTION=$action\nPHASE=PLANNED\nCREATED_AT=$now\n" || return 1
+    log_rescue_action TRANSACTION_PLAN "$RESCUE_TRANSACTION_ID|$action"
+}
+
+rescue_transaction_end() {
+    local result="$1" now
+    now=$(_rescuex_now_sec)
+    _rescuex_atomic_private_write "$STATE_DIR/rescue.commit" "SCHEMA=$RX_STATE_SCHEMA_VERSION\nID=${RESCUE_TRANSACTION_ID:-unknown}\nRESULT=$result\nFINISHED_AT=$now\n" || return 1
+    rm -f "$STATE_DIR/rescue.plan" 2>/dev/null
+    log_rescue_action TRANSACTION_COMMIT "${RESCUE_TRANSACTION_ID:-unknown}|$result"
+    sync_to_persist
+}
+
+rescue_transaction_fail() {
+    local reason="$1" now
+    now=$(_rescuex_now_sec)
+    _rescuex_atomic_private_write "$STATE_DIR/rescue.rollback" "SCHEMA=$RX_STATE_SCHEMA_VERSION\nID=${RESCUE_TRANSACTION_ID:-unknown}\nREASON=$reason\nFINISHED_AT=$now\n" || true
+    log_rescue_action TRANSACTION_ABORT "${RESCUE_TRANSACTION_ID:-unknown}|$reason"
+}
+
+read_config() {
+    _read_config_legacy
+    PATCH_FLAG_TTL_SEC=1800
+    WATCHDOG_HEALTH_GRACE_SEC=30
+    APP_UNFREEZE_MANUAL_ENABLED=false
+    [ -f "$CONF_FILE" ] || return 0
+    local k v
+    while IFS='=' read -r k v; do
+        case "$k" in
+            PATCH_FLAG_TTL_SEC) PATCH_FLAG_TTL_SEC="$v" ;;
+            WATCHDOG_HEALTH_GRACE_SEC) WATCHDOG_HEALTH_GRACE_SEC="$v" ;;
+            APP_UNFREEZE_MANUAL_ENABLED) APP_UNFREEZE_MANUAL_ENABLED="$v" ;;
+        esac
+    done < "$CONF_FILE"
+    case "$PATCH_FLAG_TTL_SEC" in ''|*[!0-9]*) PATCH_FLAG_TTL_SEC=1800 ;; esac
+    case "$WATCHDOG_HEALTH_GRACE_SEC" in ''|*[!0-9]*) WATCHDOG_HEALTH_GRACE_SEC=30 ;; esac
+    [ "$PATCH_FLAG_TTL_SEC" -lt 300 ] 2>/dev/null && PATCH_FLAG_TTL_SEC=300
+    [ "$PATCH_FLAG_TTL_SEC" -gt 7200 ] 2>/dev/null && PATCH_FLAG_TTL_SEC=7200
+    [ "$WATCHDOG_HEALTH_GRACE_SEC" -lt 10 ] 2>/dev/null && WATCHDOG_HEALTH_GRACE_SEC=10
+    [ "$WATCHDOG_HEALTH_GRACE_SEC" -gt 120 ] 2>/dev/null && WATCHDOG_HEALTH_GRACE_SEC=120
+    case "$APP_UNFREEZE_MANUAL_ENABLED" in true|1|yes) APP_UNFREEZE_MANUAL_ENABLED=true ;; *) APP_UNFREEZE_MANUAL_ENABLED=false ;; esac
+}
+
+# 为 patch 窗口提供过期机制；旧版纯“1”标记不再永久有效。
+set_patch_flag() {
+    local now expiry
+    now=$(_rescuex_now_sec); expiry=$((now + ${PATCH_FLAG_TTL_SEC:-1800}))
+    _rescuex_atomic_private_write "$PATCH_FLAG_FILE" "SCHEMA=$RX_STATE_SCHEMA_VERSION\nSTATE=PENDING\nSET_AT=$now\nEXPIRES_AT=$expiry\n" || return 1
+    sync_to_persist
+}
+
+patch_flag_active() {
+    [ -f "$PATCH_FLAG_FILE" ] || return 1
+    local now expiry
+    now=$(_rescuex_now_sec); expiry=$(grep '^EXPIRES_AT=' "$PATCH_FLAG_FILE" 2>/dev/null | cut -d= -f2)
+    case "$expiry" in ''|*[!0-9]*) clear_patch_flag; return 1 ;; esac
+    [ "$now" -le "$expiry" ] && return 0
+    log "补丁窗口已过期，清理标记"
+    clear_patch_flag
+    return 1
+}
+
+detect_patch_update() { patch_flag_active && return 0; _detect_patch_update_legacy; }
+
+clear_patch_flag() {
+    rm -f "$PATCH_FLAG_FILE" "$PATCH_FAIL_COUNT_FILE" 2>/dev/null
+    delete_persisted_state_file patch_update_flag
+    delete_persisted_state_file patch_fail_count
+}
+
+# 不能解析真实路径或遇到符号链接时拒绝 chmod/chown 目标。
+is_safe_custom_dir() {
+    local d="$1" real prefix
+    _is_safe_custom_dir_legacy "$d" || return 1
+    command -v readlink >/dev/null 2>&1 || return 1
+    real=$(readlink -f "$d" 2>/dev/null) || return 1
+    [ "$real" = "$d" ] || return 1
+    for prefix in $SAFE_CUSTOM_DIR_PREFIXES; do case "$real" in "$prefix"|"$prefix"/*) return 0;; esac; done
+    return 1
+}
+
+# 已存在基线发生版本差异时只能告警；不能自动把新基线当作可信基线。
+integrity_check_once() {
+    local v mv
+    v=$(grep '^versionCode=' "$MODDIR/module.prop" 2>/dev/null | cut -d= -f2)
+    mv=$(grep '^#VERSION=' "$INTEGRITY_MANIFEST_FILE" 2>/dev/null | cut -d= -f2)
+    if [ ! -f "$INTEGRITY_MANIFEST_FILE" ]; then integrity_build_manifest || return 1; integrity_write_status BASELINE_CREATED "首次安装建立基线"; return 0; fi
+    if [ "$v" != "$mv" ]; then integrity_write_status REVIEW_REQUIRED "版本与既有基线不匹配，禁止自动重建"; return 1; fi
+    _integrity_check_once_legacy
+}
+
+# 证据缺失时不恢复任何模块，也不删除用户/第三方写入的 disable 文件。
+reenable_all() {
+    local id base seen=0 enabled=0
+    [ -s "$RESCUED_DISABLED_LIST" ] || { log "拒绝恢复：缺少 rescued_disabled.list"; log_rescue_action REENABLE_REFUSED missing-evidence; return 1; }
+    while IFS= read -r id || [ -n "$id" ]; do
+        case "$id" in ''|\#*|*[!A-Za-z0-9._-]*|"$SELF_ID") continue;; esac
+        seen=$((seen+1))
+        for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
+            [ -n "$base" ] && [ -d "$base/$id" ] && [ -f "$base/$id/disable" ] && rm -f "$base/$id/disable" 2>/dev/null && enabled=$((enabled+1))
+        done
+    done < "$RESCUED_DISABLED_LIST"
+    [ "$seen" -gt 0 ] || { log "拒绝恢复：清单没有有效模块"; return 1; }
+    rm -f "$RESCUED_DISABLED_LIST"; delete_persisted_state_file rescued_disabled.list
+    restore_script_locks permissions
+    log_rescue_action REENABLE_EXACT "evidence=$seen,enabled=$enabled"
+    return 0
+}
+
+# 没有可信 patch 快照时不猜测性禁用模块；回滚失败不清状态。
+patch_rollback() {
+    local snap
+    rescue_transaction_begin PATCH_ROLLBACK || return 1
+    snap=$(ls -t "$PATCH_BACKUP_DIR"/snap-*.txt 2>/dev/null | head -1)
+    if [ -n "$snap" ] && [ -f "$snap" ] && restore_snapshot "$snap"; then
+        rescue_transaction_end PATCH_ROLLBACK_SNAPSHOT || return 1
+        clear_patch_flag
+        return 0
+    fi
+    rescue_transaction_fail PATCH_SNAPSHOT_MISSING_OR_FAILED
+    log "拒绝补丁自动回滚：缺少或无法恢复可信快照"
+    return 1
+}
+
+# v3.4 beta：绝不自动删除 package-restrictions.xml；该操作不再提供绕过入口。
+app_unfreeze() { APP_UNFREEZE_LAST_RESULT=MANUAL_CONFIRM_REQUIRED; write_rescue_level 2; log_rescue_action APP_UNFREEZE_REFUSED manual-review-required; return 1; }
+manual_unfreeze_apps() { printf 'RESULT=MANUAL_CONFIRM_REQUIRED\nDETAIL=Beta 已禁用 package-restrictions.xml 删除操作\n'; return 1; }
+
+three_level_rescue() {
+    local rc
+    if [ "${RESCUE_LOCK_HELD:-false}" != true ]; then
+        rescue_lock_acquire auto-rescue || return 1; rescue_transaction_begin THREE_LEVEL_RESCUE || { rescue_lock_release; return 1; }
+        _three_level_rescue_unlocked; rc=$?
+        [ "$rc" -eq 0 ] && rescue_transaction_end THREE_LEVEL_RESCUE || rescue_transaction_fail THREE_LEVEL_RESCUE_FAILED
+        rescue_lock_release; return "$rc"
+    fi
+    _three_level_rescue_unlocked
+}
+
+watchdog_trigger() {
+    rescue_lock_acquire watchdog || { log "[WD] 锁被占用，拒绝重复救砖"; return 1; }
+    rescue_transaction_begin WATCHDOG_RESCUE || { rescue_lock_release; return 1; }
+    _watchdog_trigger_unlocked; local rc=$?
+    [ "$rc" -eq 0 ] && rescue_transaction_end WATCHDOG_RESCUE || rescue_transaction_fail WATCHDOG_RESCUE_FAILED
+    rescue_lock_release; return "$rc"
+}
+
+boot_health_confirmed() {
+    local end started prop
+    [ -f "$STATUS_FILE" ] || return 1
+    end=$(grep '^BOOT_END=' "$STATUS_FILE" 2>/dev/null | cut -d= -f2); case "$end" in *[!0-9]*|'') end=0;; esac
+    [ "$end" -gt 0 ] && return 0
+    started=$(grep '^SERVICE_STARTED=' "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
+    prop=$(getprop sys.boot_completed 2>/dev/null); [ "$prop" = 1 ] || prop=$(getprop dev.bootcomplete 2>/dev/null); [ "$prop" = 1 ] || prop=$(getprop service.bootcomplete 2>/dev/null)
+    [ "$prop" = 1 ] && [ "$started" = 1 ]
+}

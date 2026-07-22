@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r7 - watchdog.sh
+# RescueX v3.4.0-r1-beta - watchdog.sh
 # 独立看门狗进程，由 post-fs-data.sh 启动
 #
 # v3.0.1 改进：
@@ -60,28 +60,23 @@ log "[WD] 看门狗启动 (PID=$$, timeout=${TIMEOUT}s, 轮询间隔=${POLL_INTE
 
 # 轮询检查
 elapsed=0
+health_seen=0
 
 while [ "$elapsed" -lt "$TIMEOUT" ]; do
     sleep "$POLL_INTERVAL"
     elapsed=$((elapsed + POLL_INTERVAL))
 
-    # 条件 1: BOOT_END 已写入（service.sh 完整执行）
-    boot_end=0
-    if [ -f "$STATUS_FILE" ]; then
-        boot_end=$(grep "^BOOT_END=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
-        case "$boot_end" in ''|*[!0-9]*) boot_end=0 ;; esac
+    # 多信号健康判定：BOOT_END 为强信号；系统完成属性 + service 运行须持续观察。
+    if boot_health_confirmed; then
+        health_seen=$((health_seen + POLL_INTERVAL))
+        if [ "$health_seen" -ge "$WATCHDOG_HEALTH_GRACE_SEC" ]; then
+            log "[WD] 健康信号连续 ${health_seen}s，安全退出"
+            cleanup_watchdog_pid_file
+            exit 0
+        fi
+    else
+        health_seen=0
     fi
-    if [ "$boot_end" != "0" ]; then
-        log "[WD] 检测到 BOOT_END=$boot_end，启动完成，看门狗正常退出"
-        cleanup_watchdog_pid_file
-        exit 0
-    fi
-
-    # 系统属性完成只能作为诊断信息，BOOT_END 才代表 service.sh 已完成收尾。
-    boot_completed=$(getprop sys.boot_completed 2>/dev/null)
-    [ "$boot_completed" != "1" ] && boot_completed=$(getprop dev.bootcomplete 2>/dev/null)
-    [ "$boot_completed" != "1" ] && boot_completed=$(getprop service.bootcomplete 2>/dev/null)
-    [ "$boot_completed" = "1" ] && log "[WD] 系统属性已完成，但等待 service.sh 写入 BOOT_END"
 done
 
 # 超时，检查是否 RESCUED 状态（避免重复触发）

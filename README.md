@@ -83,3 +83,28 @@ sh /data/adb/modules/RescueX/action.sh
 - [KernelSU](https://github.com/tiann/KernelSU)
 - [APatch](https://github.com/bmax121/APatch)
 - [MMRL](https://github.com/DerGoogler/MMRL)
+
+
+## v3.4.0-r1-beta 安全测试说明
+
+> **这是灰度测试包，不是稳定版。首次安装默认 `DRY_RUN=true`：只记录拟执行的救援动作，不改动模块状态。**
+
+本版针对审计风险做了安全收敛：
+
+- 恢复清单缺失、为空或格式异常时，**拒绝恢复**，不会恢复全部禁用模块；
+- 自动 Level 2 已禁用：不会删除 `package-restrictions.xml`；
+- 自动救援使用跨进程目录锁和 `rescue.plan`/`rescue.commit` 事务记录；
+- 补丁窗口带 TTL；无可信补丁快照时不自动猜测性回滚；
+- 看门狗采用多信号健康确认；自动路径只请求一次普通重启，不进入 Recovery、不使用 SysRq；
+- 完整性基线版本不匹配时只告警，不自动重建。
+
+### 首次真机测试顺序
+
+1. 只在备用设备进行，先完整备份 boot/vendor、模块目录和重要数据。
+2. 安装 ZIP 后确认 WebUI 可打开、状态目录可读、日志可生成。
+3. 保持 `DRY_RUN=true`，验证正常启动 3 次与手动重启 1 次都不误触发救援。
+4. 检查 `rescue.log`、`rescue_audit.log`、`rescue.plan`/`rescue.commit`；确认不会出现 Recovery/SysRq 路径。
+5. 在可随时救援的环境中逐项测试模块禁用、快照、补丁标记 TTL 和看门狗健康信号。
+6. 只有完成测试清单且明确把 `DRY_RUN=false` 后，才可测试真实模块状态修改。
+
+详细项目测试项见 `TESTING.md`。

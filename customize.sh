@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r7 - customize.sh
+# RescueX v3.4.0-r1-beta - customize.sh
 
 # v3.0.1 改进（专业级升级）：
 # - 三级渐进式救砖支持
@@ -8,7 +8,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.3.0-r7"
+RX_VERSION="v3.4.0-r1-beta"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -98,7 +98,7 @@ done
 
 # v2.7.0: 持久化目录（模块更新不丢失）
 PERSIST_DIR="/data/adb/rescuex_data"
-MAX_MANUAL_SNAPSHOTS=5
+MAX_MANUAL_SNAPSHOTS=12
 
 CONFIG_PRESERVED=false
 WHITELIST_PRESERVED=false
@@ -175,7 +175,7 @@ BOOT_TIMEOUT_SEC=90
 OTA_TIMEOUT_SEC=900
 ENABLED=true
 LOG_ENABLED=true
-DRY_RUN=false
+DRY_RUN=true
 PROGRESSIVE_RESCUE=true
 AUTO_REENABLE=false
 USER_REBOOT_GRACE_SEC=30
@@ -321,7 +321,7 @@ ui_print "  · OTA 超时: 900 秒 (15 分钟)"
 ui_print "  · 补丁超时: 180 秒"
 ui_print "  · 渐进式救砖: 启用"
 ui_print "  · 启动模式感知: 启用"
-  ui_print "  · 数据持久化: 启用 (v3.3.0-r7)"
+  ui_print "  · 数据持久化: 启用 (v3.4.0-r1-beta)"
 ui_print "  · DRY_RUN: 关闭"
 ui_print ""
 ui_print "  通过 WebUI 可调整全部参数"

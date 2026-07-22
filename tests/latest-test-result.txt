@@ -1,0 +1,8 @@
+ok missing evidence is fail-closed
+ok exact evidence restores only recorded module
+ok expired patch flag is cleared
+ok new patch flag is structured and active
+ok transaction lock excludes concurrent owner
+ok app unfreeze is manual-confirmation only
+ok integrity version mismatch requires review
+all 7 safety tests passed

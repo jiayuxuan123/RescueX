@@ -1,4 +1,4 @@
-/* RescueX v3.3.0-r7 - WebUI 控制器
+/* RescueX v3.4.0-r1-beta - WebUI 控制器
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -13,8 +13,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.3.0-r7';
-const APP_VERSION_CODE = 33007;
+const APP_VERSION = 'v3.4.0-r1-beta';
+const APP_VERSION_CODE = 34001;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -122,7 +122,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.3.0-r7：修复模块自身隐藏目录的误报。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.4.0-r1-beta：修复模块自身隐藏目录的误报。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -423,7 +423,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.3.0-r7: fixes false positives for module self-hidden paths.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.4.0-r1-beta: fixes false positives for module self-hidden paths.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -868,7 +868,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.3.0-r7' : 'Automatic Boot Rescue v3.3.0-r7';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.4.0-r1-beta' : 'Automatic Boot Rescue v3.4.0-r1-beta';
     }
 
     openExternal(url) {
