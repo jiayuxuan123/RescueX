@@ -1261,13 +1261,13 @@ detect_destructive_script_content() {
     local content
     content=$(grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null)
 
-    printf '%s\n' "$content" | grep -Eiq '(^|[;&|[:space:]])rm[[:space:]]+-[[:alnum:]]*r[[:alnum:]]*f([[:space:]]+|[[:space:]]+--[[:space:]]+).*(/data([[:space:]]|$)|/data/(data|user|system|misc|property|vendor|media|app|dalvik-cache|cache|metadata|persist)(/|[[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)(/|[[:space:]]|$)|/sdcard([/[:space:]]|$)|/storage(/emulated)?(/|[[:space:]]|$))' && {
+    printf '%s\n' "$content" | grep -Eiq '(^|[;&|[:space:]])rm[[:space:]]+-[[:alnum:]]*r[[:alnum:]]*f([[:space:]]+|[[:space:]]+--[[:space:]]+).*(/data([[:space:]]|$)|/data/(data|user|system|misc|property|vendor|media|app|dalvik-cache|cache|metadata|persist)(/|[[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)([[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)/[^/[:space:]]+/?([[:space:]]|$)|/sdcard([/[:space:]]|$)|/storage(/emulated)?(/|[[:space:]]|$))' && {
         echo 'rm-rf-sensitive-path'
         return 0
     }
 
     # find 删除规则与 rm 保持同一套敏感根目录，避免再次把普通 /data 子目录扩大解释为擦除。
-    printf '%s\n' "$content" | grep -Eiq 'find[[:space:]]+(/data([[:space:]]|$)|/data/(data|user|system|misc|property|vendor|media|app|dalvik-cache|cache|metadata|persist)(/|[[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)(/|[[:space:]]|$)|/sdcard([/[:space:]]|$)|/storage(/emulated)?(/|[[:space:]]|$)).*-delete' && {
+    printf '%s\n' "$content" | grep -Eiq 'find[[:space:]]+(/data([[:space:]]|$)|/data/(data|user|system|misc|property|vendor|media|app|dalvik-cache|cache|metadata|persist)(/|[[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)([[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)/[^/[:space:]]+/?([[:space:]]|$)|/sdcard([/[:space:]]|$)|/storage(/emulated)?(/|[[:space:]]|$)).*-delete' && {
         echo 'find-delete-sensitive-path'
         return 0
     }

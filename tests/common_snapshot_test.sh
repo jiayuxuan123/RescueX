@@ -179,4 +179,23 @@ rmdir /data/adb/lsposed 2>/dev/null || true
 assert_eq "disabled (legacy)" "$state" "legacy LSPosed 状态应被识别"
 pass "legacy lsposed detection"
 
+script_dir="$TMP_ROOT/script-tests"
+mkdir -p "$script_dir"
+printf '%s\n' 'rm -rf /data/adb/modules/bszip/work/cache' > "$script_dir/nested-module-cleanup.sh"
+if detect_destructive_script_content "$script_dir/nested-module-cleanup.sh" >/dev/null; then
+    fail "隐藏环境模块的深层工作目录清理不应被拦截"
+fi
+pass "nested module cleanup allowed"
+
+printf '%s\n' 'rm -rf /data/adb/modules/bszip' > "$script_dir/module-root-delete.sh"
+reason=$(detect_destructive_script_content "$script_dir/module-root-delete.sh")
+assert_eq "rm-rf-sensitive-path" "$reason" "模块根目录删除应继续拦截"
+pass "module root deletion blocked"
+
+printf '%s\n' 'find /data/adb/modules/bszip/work -type f -delete' > "$script_dir/nested-find-delete.sh"
+if detect_destructive_script_content "$script_dir/nested-find-delete.sh" >/dev/null; then
+    fail "隐藏环境模块的深层 find 清理不应被拦截"
+fi
+pass "nested find cleanup allowed"
+
 printf 'ALL TESTS PASSED\n'
