@@ -18,7 +18,7 @@
                 <div class="logo-icon">R</div>
                 <div class="brand-text">
                     <div class="title">RescueX</div>
-                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.2.9</div>
+                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.3.0</div>
                 </div>
             </div>
             <div class="appbar-actions">
@@ -284,6 +284,10 @@
                 <div class="form-group">
                     <label data-i18n="advanced">高级选项</label>
                     <label class="checkbox-label">
+                        <input type="checkbox" id="cfg-integrity-enabled">
+                        <span data-i18n="opt_integrity">启用轻量完整性自检（默认开启）</span>
+                    </label>
+                    <label class="checkbox-label">
                         <input type="checkbox" id="cfg-log" checked>
                         <span data-i18n="opt_log">记录详细启动日志</span>
                     </label>
@@ -306,12 +310,27 @@
                 </div>
 
                 <button class="btn btn-filled" data-action="saveConfig" data-i18n="save_config">保存配置</button>
+                <button class="btn btn-tonal" data-action="runIntegrityCheck" data-i18n="run_integrity_check">立即检查完整性</button>
 
                 <div class="section-actions">
                     <button class="btn btn-tonal" data-action="exportConfig" data-i18n="export_config">导出配置</button>
                     <button class="btn btn-tonal" data-action="importConfig" data-i18n="import_config">导入配置</button>
                     <button class="btn btn-tonal" data-action="exportFullState" data-i18n="export_full">导出完整状态</button>
                 </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2><span class="icon">#</span> <span data-i18n="integrity_title">RescueX 完整性自检</span></h2>
+                <span id="integrity-badge" class="badge badge-info">--</span>
+            </div>
+            <div class="card-body">
+                <div class="info-grid">
+                    <div class="info-tile"><div class="label" data-i18n="integrity_daemon">自检守护</div><div class="value" id="integrity-daemon">--</div></div>
+                    <div class="info-tile"><div class="label" data-i18n="integrity_last_check">最近检查</div><div class="value" id="integrity-last-check">--</div></div>
+                </div>
+                <p class="desc-text" id="integrity-detail">--</p>
             </div>
         </div>
 
@@ -414,9 +433,9 @@
             </div>
             <div class="card-body">
                 <div class="notice-block">
-                    <div class="notice-kicker text-mono">v3.2.9</div>
-                    <div class="notice-title" data-i18n="update_notice_title">状态一致性与隐私提示修复</div>
-                    <p class="desc-text" data-i18n="update_notice_desc">统一 CLI/WebUI 嫌疑模块和已知良好基线展示，收紧看门狗状态判断，并补充诊断报告导出提示。</p>
+                    <div class="notice-kicker text-mono">v3.3.0</div>
+                    <div class="notice-title" data-i18n="update_notice_title">完整性自检与脚本误报修复</div>
+                    <p class="desc-text" data-i18n="update_notice_desc">新增轻量完整性自检，修复模块清理自身 /data 工作目录时被误判为擦除分区的问题。</p>
                     <div class="section-actions">
                         <button class="btn btn-filled" data-action="checkUpdate" data-i18n="check_update">检查更新</button>
                         <button class="btn btn-tonal" data-action="openRepository" data-i18n="open_source_repo">开源仓库</button>
@@ -498,7 +517,7 @@
                 <div class="info-grid">
                     <div class="info-tile">
                         <div class="label" data-i18n="version">版本</div>
-                        <div class="value text-mono">v3.2.9</div>
+                        <div class="value text-mono">v3.3.0</div>
                     </div>
                     <div class="info-tile">
                         <div class="label" data-i18n="manager">管理器</div>
@@ -509,7 +528,7 @@
                         <div class="value text-mono">jiayuxuan123/RescueX</div>
                     </div>
                 </div>
-                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.9：新增 MMRL 前台重入保护。</p>
+                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.3.0：新增轻量完整性自检并修复破坏性脚本误报。</p>
                 <div class="section-actions">
                     <button class="btn btn-text btn-sm" data-action="checkUpdate" data-i18n="check_update">检查更新</button>
                     <button class="btn btn-text btn-sm" data-action="showFeatures" data-i18n="feature_intro">功能介绍</button>

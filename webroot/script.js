@@ -1,4 +1,4 @@
-/* RescueX v3.0.1 - WebUI 控制器
+/* RescueX v3.3.0 - WebUI 控制器
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -13,8 +13,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.2.9';
-const APP_VERSION_CODE = 32900;
+const APP_VERSION = 'v3.3.0';
+const APP_VERSION_CODE = 33000;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -113,8 +113,8 @@ const I18N = {
         manager: '管理器',
         source_code: '源码',
         update_notice: '更新公告',
-        update_notice_title: '状态一致性与隐私提示修复',
-        update_notice_desc: '统一 CLI/WebUI 嫌疑模块和已知良好基线展示，收紧看门狗状态判断，并补充诊断报告导出提示。',
+        update_notice_title: '完整性自检与脚本误报修复',
+        update_notice_desc: '新增默认开启的轻量完整性自检，修复模块清理自身 /data 工作目录时被误判为擦除分区的问题，并收紧核心路径与格式化命令识别。',
         check_update: '检查更新',
         checking_update: '正在检查更新...',
         update_available: '发现新版本',
@@ -122,7 +122,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.2.9：新增 MMRL 前台重入保护。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。基于 uptime 单调时钟计算启动耗时，不受 RTC 同步影响。v3.3.0：新增轻量完整性自检并修复破坏性脚本误报。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -221,6 +221,13 @@ const I18N = {
         last_rescue: '最近救砖',
         watchdog_poll: '看门狗轮询间隔',
         watchdog_poll_hint: '长超时场景会自动放大（v2.5）',
+        opt_integrity: '启用轻量完整性自检（默认开启）',
+        run_integrity_check: '立即检查完整性',
+        integrity_title: 'RescueX 完整性自检',
+        integrity_daemon: '自检守护',
+        integrity_last_check: '最近检查',
+        integrity_passed: '完整性检查通过',
+        integrity_failed: '完整性检查发现异常',
         feature_intro: '功能介绍',
         privacy_policy: '隐私协议',
         usage_notice: '使用须知',
@@ -407,8 +414,8 @@ const I18N = {
         manager: 'Manager',
         source_code: 'Source',
         update_notice: 'Update Notice',
-        update_notice_title: 'Status consistency and privacy notice fixes',
-        update_notice_desc: 'Unifies CLI/WebUI suspect and known-good baseline display, tightens watchdog ownership checks, and adds diagnostic export notice.',
+        update_notice_title: 'Integrity checks and script false-positive fixes',
+        update_notice_desc: 'Adds lightweight integrity checks enabled by default, prevents module-private /data cleanup from being treated as partition wiping, and tightens core-path and format-command detection.',
         check_update: 'Check Updates',
         checking_update: 'Checking updates...',
         update_available: 'Update available',
@@ -416,7 +423,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.2.9: adds MMRL foreground re-entry protection.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. Uses uptime monotonic clock for boot duration, unaffected by RTC sync. v3.3.0: adds lightweight integrity checks and fixes destructive-script false positives.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -502,6 +509,13 @@ const I18N = {
         last_rescue: 'Last Rescue',
         watchdog_poll: 'Watchdog Poll Interval',
         watchdog_poll_hint: 'Auto-scales for long timeouts (v2.5)',
+        opt_integrity: 'Enable lightweight integrity checks (enabled by default)',
+        run_integrity_check: 'Check integrity now',
+        integrity_title: 'RescueX integrity check',
+        integrity_daemon: 'Integrity daemon',
+        integrity_last_check: 'Last check',
+        integrity_passed: 'Integrity check passed',
+        integrity_failed: 'Integrity check found an issue',
         feature_intro: 'Features',
         privacy_policy: 'Privacy',
         usage_notice: 'Usage Notice',
@@ -846,7 +860,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.2.9' : 'Automatic Boot Rescue v3.2.9';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.3.0' : 'Automatic Boot Rescue v3.3.0';
     }
 
     openExternal(url) {
@@ -1266,6 +1280,7 @@ done`;
             this.setChecked('#cfg-patch-auto-rollback', cfg.PATCH_AUTO_ROLLBACK !== 'false');
             // v2.5: 看门狗轮询间隔
             this.setVal('#cfg-watchdog-poll', cfg.WATCHDOG_POLL_INTERVAL_SEC || 2);
+            this.setChecked('#cfg-integrity-enabled', cfg.INTEGRITY_CHECK_ENABLED !== 'false');
         } catch (e) {
             this.setDefaults();
         }
@@ -1288,6 +1303,7 @@ done`;
         this.setChecked('#cfg-auto-reenable', false);
         this.setChecked('#cfg-dry-run', false);
         this.setVal('#cfg-watchdog-poll', 2);
+        this.setChecked('#cfg-integrity-enabled', true);
     }
 
     async getDashboardSnapshot(options = {}) {
@@ -1409,9 +1425,33 @@ get_dashboard_snapshot`;
                 watchdogAlive: wdStatus === 'alive_ours',
                 patchDetected: s.PATCH_DETECTED === 'true' || extra.PATCH_FLAG === '1'
             };
+            this.renderIntegrity(snap);
             this.renderReadiness();
         } catch (e) {
             console.error('loadStatus failed:', e);
+        }
+    }
+
+    renderIntegrity(snapshot) {
+        const result = snapshot.INTEGRITY_RESULT || 'NOT_INITIALIZED';
+        const badge = this.qs('#integrity-badge');
+        const classes = { OK: 'badge-ok', COMPROMISED: 'badge-err', BASELINE_CREATED: 'badge-info', ERROR: 'badge-err', NOT_INITIALIZED: 'badge-info' };
+        badge.textContent = result;
+        badge.className = `badge ${classes[result] || 'badge-info'}`;
+        this.setText('#integrity-daemon', snapshot.INTEGRITY_DAEMON === 'alive' ? this.t('wd_running') : this.t('wd_idle'));
+        this.setText('#integrity-last-check', snapshot.INTEGRITY_CHECKED_AT || '--');
+        this.setText('#integrity-detail', snapshot.INTEGRITY_DETAIL || '--');
+    }
+
+    async runIntegrityCheck() {
+        try {
+            const out = await this.exec(`MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null && integrity_check_once; echo RESULT=$?`);
+            this.dashboardSnapshot = null;
+            await this.loadStatus({ force: true });
+            const passed = out.includes('RESULT=0');
+            this.toast(this.t(passed ? 'integrity_passed' : 'integrity_failed'), passed ? 'success' : 'error');
+        } catch (e) {
+            this.toast(this.t('integrity_failed'), 'error');
         }
     }
 
@@ -1709,6 +1749,7 @@ done`;
         // v2.5: 看门狗轮询间隔
         const watchdogPollRaw = this.qs('#cfg-watchdog-poll') ? this.qs('#cfg-watchdog-poll').value : '2';
         const watchdogPoll = parseInt(watchdogPollRaw) || 2;
+        const integrityEnabled = this.qs('#cfg-integrity-enabled').checked;
 
         const t = Math.max(1, Math.min(10, threshold));
         const to = Math.max(30, Math.min(600, timeout));
@@ -1732,6 +1773,7 @@ done`;
             `PATCH_FAIL_THRESHOLD=${pft}`,
             `PATCH_AUTO_ROLLBACK=${patchAutoRollback ? 'true' : 'false'}`,
             `WATCHDOG_POLL_INTERVAL_SEC=${wp}`,
+            `INTEGRITY_CHECK_ENABLED=${integrityEnabled ? 'true' : 'false'}`,
             ''
         ];
         try {
@@ -1754,7 +1796,8 @@ mv config.conf.tmp.$$ config.conf
                     PATCH_UPDATE_TIMEOUT_SEC: String(pt),
                     PATCH_FAIL_THRESHOLD: String(pft),
                     PATCH_AUTO_ROLLBACK: patchAutoRollback ? 'true' : 'false',
-                    WATCHDOG_POLL_INTERVAL_SEC: String(wp)
+                    WATCHDOG_POLL_INTERVAL_SEC: String(wp),
+                    INTEGRITY_CHECK_ENABLED: integrityEnabled ? 'true' : 'false'
                 };
                 this.toast(this.t('saved'), 'success');
             } else {

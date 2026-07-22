@@ -105,3 +105,12 @@
   - Suspect module tracking
   - OTA-aware timeout adjustment
   - WebUI for management (compatible with KSU / Magisk v27+ / MMRL)
+## v3.3.0 (2026-07-22)
+
+### 安全与完整性
+
+- 新增默认开启的轻量完整性自检守护，首次成功启动后建立核心脚本 SHA-256 基线，并按随机间隔周期校验。
+- WebUI 新增完整性自检状态、守护进程状态、最近检查时间和立即检查入口。
+- 修复模块清理自身普通 `/data` 工作目录时被误判为擦除分区的问题。
+- 将删除目标按路径分级，继续拦截 Android 核心数据根、模块根、共享存储和明确格式化/块设备写入命令。
+- 增加破坏性脚本判定回归样例和本阶段设计文档。

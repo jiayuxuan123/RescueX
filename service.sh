@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.9 - service.sh
+# RescueX v3.3.0 - service.sh
 # 系统完全启动后执行，标记启动成功
 #
 # v3.0.1 改进：
@@ -218,5 +218,9 @@ sync_to_persist
 
 # 6. 更新 module.prop description
 update_module_prop
+
+# 所有启动成功收尾动作完成后拉起长期完整性自检守护
+start_integrity_daemon
+log "完整性自检守护已启动（开关=${INTEGRITY_CHECK_ENABLED}）"
 
 log "RescueX $RX_VERSION service.sh 完成"

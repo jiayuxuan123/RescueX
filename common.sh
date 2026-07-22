@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.2.9 - common.sh
+# RescueX v3.3.0 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.2.9"
-RX_VERSION_CODE=32900
+RX_VERSION="v3.3.0"
+RX_VERSION_CODE=33000
 
 # ============================================================
 # 路径初始化
@@ -51,6 +51,11 @@ _rescuex_init_paths() {
     SCRIPT_RISK_ALERT_FILE="$STATE_DIR/script_risk_alert.conf"
     SCRIPT_RISK_QUARANTINE_DIR="$STATE_DIR/script_risk_quarantine"
     SCRIPT_LOCK_RECORD_FILE="$STATE_DIR/script_lock_records.conf"
+
+    INTEGRITY_MANIFEST_FILE="$STATE_DIR/integrity.manifest"
+    INTEGRITY_STATUS_FILE="$STATE_DIR/integrity_status"
+    INTEGRITY_PID_FILE="$STATE_DIR/integrity_pid"
+    INTEGRITY_SCRIPT="$MODDIR/integrity.sh"
 
     # v3.0.0: 嫌疑模块追踪
     GOOD_MODULES_FILE="$STATE_DIR/good_modules.list"   # 成功开机后的已知良好模块列表
@@ -161,7 +166,7 @@ sync_to_persist() {
     mkdir -p "$PERSIST_DIR" 2>/dev/null
     normalize_snapshot_storage
     sync_removable_persist_state_files
-    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session script_lock_records.conf; do
+    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session script_lock_records.conf integrity.manifest; do
         [ -f "$STATE_DIR/$f" ] && cp "$STATE_DIR/$f" "$PERSIST_DIR/$f" 2>/dev/null
     done
     # 快照目录
@@ -180,7 +185,7 @@ sync_to_persist() {
 restore_from_persist() {
     [ ! -d "$PERSIST_DIR" ] && return 1
     local restored=0
-    for f in config.conf whitelist.conf boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session script_lock_records.conf; do
+    for f in config.conf whitelist.conf boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session script_lock_records.conf integrity.manifest; do
         if [ -f "$PERSIST_DIR/$f" ] && [ ! -f "$STATE_DIR/$f" ]; then
             cp "$PERSIST_DIR/$f" "$STATE_DIR/$f" 2>/dev/null && restored=$((restored + 1))
         fi
@@ -334,6 +339,8 @@ read_config() {
     PATCH_AUTO_ROLLBACK=true
     # 看门狗轮询间隔（秒），原硬编码为 2，现可配置（尤其利于 OTA 900s 长超时场景减少轮询次数）
     WATCHDOG_POLL_INTERVAL_SEC=2
+    INTEGRITY_CHECK_ENABLED=true
+    INTEGRITY_INTERVAL_MIN_SEC=60
 
     [ ! -f "$CONF_FILE" ] && return
 
@@ -354,6 +361,8 @@ read_config() {
             PATCH_FAIL_THRESHOLD) PATCH_FAIL_THRESHOLD="${v:-2}" ;;
             PATCH_AUTO_ROLLBACK) PATCH_AUTO_ROLLBACK="${v:-true}" ;;
             WATCHDOG_POLL_INTERVAL_SEC) WATCHDOG_POLL_INTERVAL_SEC="${v:-2}" ;;
+            INTEGRITY_CHECK_ENABLED) INTEGRITY_CHECK_ENABLED="${v:-true}" ;;
+            INTEGRITY_INTERVAL_MIN_SEC) INTEGRITY_INTERVAL_MIN_SEC="${v:-60}" ;;
         esac
     done < "$CONF_FILE"
 
@@ -365,6 +374,7 @@ read_config() {
     case "$PATCH_UPDATE_TIMEOUT_SEC" in ''|*[!0-9]*) PATCH_UPDATE_TIMEOUT_SEC=180 ;; esac
     case "$PATCH_FAIL_THRESHOLD" in ''|*[!0-9]*) PATCH_FAIL_THRESHOLD=2 ;; esac
     case "$WATCHDOG_POLL_INTERVAL_SEC" in ''|*[!0-9]*) WATCHDOG_POLL_INTERVAL_SEC=2 ;; esac
+    case "$INTEGRITY_INTERVAL_MIN_SEC" in ''|*[!0-9]*) INTEGRITY_INTERVAL_MIN_SEC=60 ;; esac
 
     # 范围限制（2>/dev/null 防止非数字比较报错）
     [ "$REBOOT_THRESHOLD" -lt 1 ] 2>/dev/null && REBOOT_THRESHOLD=1
@@ -384,6 +394,97 @@ read_config() {
     # 看门狗轮询间隔：1-10 秒（原硬编码 2，过小在 OTA 长超时下轮询次数过多，过大影响及时性）
     [ "$WATCHDOG_POLL_INTERVAL_SEC" -lt 1 ] 2>/dev/null && WATCHDOG_POLL_INTERVAL_SEC=1
     [ "$WATCHDOG_POLL_INTERVAL_SEC" -gt 10 ] 2>/dev/null && WATCHDOG_POLL_INTERVAL_SEC=10
+    [ "$INTEGRITY_INTERVAL_MIN_SEC" -lt 60 ] 2>/dev/null && INTEGRITY_INTERVAL_MIN_SEC=60
+    [ "$INTEGRITY_INTERVAL_MIN_SEC" -gt 300 ] 2>/dev/null && INTEGRITY_INTERVAL_MIN_SEC=300
+}
+
+integrity_target_files() {
+    printf '%s\n' common.sh watchdog.sh integrity.sh post-fs-data.sh service.sh
+}
+
+integrity_hash_file() {
+    local file="$1" hash
+    if command -v sha256sum >/dev/null 2>&1; then
+        hash=$(sha256sum "$file" 2>/dev/null | cut -d' ' -f1)
+    elif command -v toybox >/dev/null 2>&1; then
+        hash=$(toybox sha256sum "$file" 2>/dev/null | cut -d' ' -f1)
+    fi
+    printf '%s' "$hash"
+}
+
+integrity_write_status() {
+    local result="$1" detail="$2"
+    mkdir -p "$STATE_DIR" 2>/dev/null
+    {
+        echo "RESULT=$result"
+        echo "DETAIL=$detail"
+        echo "CHECKED_AT=$(get_log_time)"
+    } > "$INTEGRITY_STATUS_FILE.tmp.$$"
+    chmod 0600 "$INTEGRITY_STATUS_FILE.tmp.$$" 2>/dev/null
+    mv "$INTEGRITY_STATUS_FILE.tmp.$$" "$INTEGRITY_STATUS_FILE"
+}
+
+integrity_build_manifest() {
+    local name hash version
+    version=$(grep '^versionCode=' "$MODDIR/module.prop" 2>/dev/null | cut -d= -f2)
+    case "$version" in ''|*[!0-9]*) version=0 ;; esac
+    mkdir -p "$STATE_DIR" 2>/dev/null
+    printf '#VERSION=%s\n' "$version" > "$INTEGRITY_MANIFEST_FILE.tmp.$$"
+    while IFS= read -r name; do
+        [ -f "$MODDIR/$name" ] || continue
+        hash=$(integrity_hash_file "$MODDIR/$name")
+        [ -n "$hash" ] && printf '%s  %s\n' "$hash" "$name" >> "$INTEGRITY_MANIFEST_FILE.tmp.$$"
+    done << EOF
+$(integrity_target_files)
+EOF
+    [ -s "$INTEGRITY_MANIFEST_FILE.tmp.$$" ] || { rm -f "$INTEGRITY_MANIFEST_FILE.tmp.$$"; return 1; }
+    chmod 0600 "$INTEGRITY_MANIFEST_FILE.tmp.$$" 2>/dev/null
+    mv "$INTEGRITY_MANIFEST_FILE.tmp.$$" "$INTEGRITY_MANIFEST_FILE"
+}
+
+integrity_check_once() {
+    local name expected actual missing=0 changed=0 version manifest_version
+    version=$(grep '^versionCode=' "$MODDIR/module.prop" 2>/dev/null | cut -d= -f2)
+    case "$version" in ''|*[!0-9]*) version=0 ;; esac
+    [ -f "$INTEGRITY_MANIFEST_FILE" ] || {
+        integrity_build_manifest || { integrity_write_status ERROR "无法建立基线"; return 1; }
+        integrity_write_status BASELINE_CREATED "已建立完整性基线"
+        return 0
+    }
+    manifest_version=$(grep '^#VERSION=' "$INTEGRITY_MANIFEST_FILE" 2>/dev/null | cut -d= -f2)
+    if [ "$manifest_version" != "$version" ]; then
+        integrity_build_manifest || { integrity_write_status ERROR "无法更新版本基线"; return 1; }
+        integrity_write_status BASELINE_CREATED "模块版本已更新，已重建基线"
+        return 0
+    fi
+    while read -r expected name; do
+        [ -n "$name" ] || continue
+        if [ ! -f "$MODDIR/$name" ]; then missing=$((missing + 1)); continue; fi
+        actual=$(integrity_hash_file "$MODDIR/$name")
+        [ "$actual" = "$expected" ] || changed=$((changed + 1))
+    done < "$INTEGRITY_MANIFEST_FILE"
+    if [ "$missing" -gt 0 ] || [ "$changed" -gt 0 ]; then
+        integrity_write_status COMPROMISED "缺失${missing}个，变更${changed}个"
+        log "[INTEGRITY] 检测到 RescueX 文件完整性异常: 缺失=${missing}, 变更=${changed}"
+        return 1
+    fi
+    integrity_write_status OK "核心文件校验通过"
+    return 0
+}
+
+integrity_pid_is_alive() {
+    local pid
+    pid=$(cat "$INTEGRITY_PID_FILE" 2>/dev/null)
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    kill -0 "$pid" 2>/dev/null
+}
+
+start_integrity_daemon() {
+    read_config
+    [ "$INTEGRITY_CHECK_ENABLED" = "true" ] || return 0
+    integrity_pid_is_alive && return 0
+    [ -x "$INTEGRITY_SCRIPT" ] || return 1
+    sh "$INTEGRITY_SCRIPT" >/dev/null 2>&1 < /dev/null &
 }
 
 # ============================================================
@@ -1154,23 +1255,31 @@ notify_pending_script_risk_alert() {
 detect_destructive_script_content() {
     local target="$1"
     [ -f "$target" ] || return 1
-    grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null | grep -Eiq '(^|[;&|[:space:]])rm[[:space:]]+-[[:alnum:]]*r[[:alnum:]]*f[[:space:]]+/((data|cache|metadata|persist)(/|[[:space:]]|$)|sdcard([/[:space:]]|$)|storage(/emulated)?(/|[[:space:]]|$))' && {
+
+    # 仅把 Android 核心数据根、模块根和共享存储根视为高风险删除目标。
+    # 任意 /data/<module-private-dir> 都属于普通文件生命周期操作，允许模块清理自身目录。
+    local content
+    content=$(grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null)
+
+    printf '%s\n' "$content" | grep -Eiq '(^|[;&|[:space:]])rm[[:space:]]+-[[:alnum:]]*r[[:alnum:]]*f([[:space:]]+|[[:space:]]+--[[:space:]]+).*(/data([[:space:]]|$)|/data/(data|user|system|misc|property|vendor|media|app|dalvik-cache|cache|metadata|persist)(/|[[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)(/|[[:space:]]|$)|/sdcard([/[:space:]]|$)|/storage(/emulated)?(/|[[:space:]]|$))' && {
         echo 'rm-rf-sensitive-path'
         return 0
     }
-    grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null | grep -Eiq 'find[[:space:]]+/((data|cache|metadata)(/|[[:space:]]|$)|sdcard([/[:space:]]|$)|storage(/emulated)?(/|[[:space:]]|$)).*-delete' && {
+
+    # find 删除规则与 rm 保持同一套敏感根目录，避免再次把普通 /data 子目录扩大解释为擦除。
+    printf '%s\n' "$content" | grep -Eiq 'find[[:space:]]+(/data([[:space:]]|$)|/data/(data|user|system|misc|property|vendor|media|app|dalvik-cache|cache|metadata|persist)(/|[[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)(/|[[:space:]]|$)|/sdcard([/[:space:]]|$)|/storage(/emulated)?(/|[[:space:]]|$)).*-delete' && {
         echo 'find-delete-sensitive-path'
         return 0
     }
-    grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null | grep -Eiq '(^|[;&|[:space:]])(mkfs|mke2fs|make_f2fs|newfs_msdos|wipefs|blkdiscard)([[:space:]]|$)' && {
+    printf '%s\n' "$content" | grep -Eiq '(^|[;&|[:space:]])(mkfs([.][[:alnum:]_-]+)?|mke2fs|make_f2fs|newfs_msdos|wipefs|blkdiscard)([[:space:]]|$)' && {
         echo 'format-command'
         return 0
     }
-    grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null | grep -Eiq 'dd[[:space:]].*of=/dev/(block|mmcblk|nvme|sd[a-z])' && {
+    printf '%s\n' "$content" | grep -Eiq 'dd[[:space:]].*of=/dev/(block|mmcblk|nvme|sd[a-z])' && {
         echo 'raw-block-write'
         return 0
     }
-    grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null | grep -Eiq '(recovery|twrp|toybox)[[:space:]].*(wipe|format)|(^|[;&|[:space:]])sm[[:space:]]+format([[:space:]]|$)|(^|[;&|[:space:]])vdc[[:space:]].*format' && {
+    printf '%s\n' "$content" | grep -Eiq '(recovery|twrp|toybox)[[:space:]].*(wipe|format)|(^|[;&|[:space:]])sm[[:space:]]+format([[:space:]]|$)|(^|[;&|[:space:]])vdc[[:space:]].*format' && {
         echo 'wipe-or-format-invocation'
         return 0
     }
@@ -2578,6 +2687,16 @@ EOF
         fi
     fi
     echo "WD_STATUS=$wd_status"
+
+    echo "INTEGRITY_ENABLED=${INTEGRITY_CHECK_ENABLED:-true}"
+    if [ -f "$INTEGRITY_STATUS_FILE" ]; then
+        while IFS='=' read -r k v; do
+            [ -n "$k" ] && echo "INTEGRITY_${k}=$v"
+        done < "$INTEGRITY_STATUS_FILE"
+    else
+        echo "INTEGRITY_RESULT=NOT_INITIALIZED"
+    fi
+    if integrity_pid_is_alive; then echo "INTEGRITY_DAEMON=alive"; else echo "INTEGRITY_DAEMON=dead"; fi
 
     compute_boot_stats
 }
