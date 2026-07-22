@@ -9,7 +9,7 @@ MODDIR="$ROOT"
 STATE_DIR="$TD/state"; PERSIST_DIR="$TD/persist"; SNAPSHOT_DIR="$STATE_DIR/snapshots"
 CONF_FILE="$STATE_DIR/config.conf"; LOG_FILE="$STATE_DIR/rescue.log"; STATUS_FILE="$STATE_DIR/boot_status"; STATUS_TMP="$STATE_DIR/.boot_status.tmp"
 RESCUED_DISABLED_LIST="$STATE_DIR/rescued_disabled.list"; PATCH_FLAG_FILE="$STATE_DIR/patch_update_flag"; PATCH_FAIL_COUNT_FILE="$STATE_DIR/patch_fail_count"; PATCH_BACKUP_DIR="$STATE_DIR/patch_backup"
-RESCUE_LEVEL_FILE="$STATE_DIR/rescue_level"; INTEGRITY_MANIFEST_FILE="$STATE_DIR/integrity.manifest"; INTEGRITY_STATUS_FILE="$STATE_DIR/integrity_status"; SCRIPT_LOCK_RECORD_FILE="$STATE_DIR/script_lock_records.conf"
+RESCUE_LEVEL_FILE="$STATE_DIR/rescue_level"; INTEGRITY_MANIFEST_FILE="$STATE_DIR/integrity.manifest"; INTEGRITY_STATUS_FILE="$STATE_DIR/integrity_status"
 MODULE_BASE="$TD/modules"; MODULE_BASE_KSU=""; MODULE_BASE_AP=""; SELF_ID=RescueX
 SAFE_CUSTOM_DIR_PREFIXES="$TD/safe"
 mkdir -p "$STATE_DIR" "$PERSIST_DIR" "$SNAPSHOT_DIR" "$MODULE_BASE/modA" "$MODULE_BASE/modB" "$TD/safe"
@@ -46,7 +46,7 @@ if app_unfreeze; then echo 'app unfreeze unexpectedly succeeded' >&2; exit 1; fi
 ok 'app unfreeze is manual-confirmation only'
 # 7: Version mismatch cannot silently rebuild integrity baseline.
 # use an isolated MODDIR copy for manifest test
-IMOD="$TD/imod"; mkdir -p "$IMOD"; cp "$ROOT/module.prop" "$IMOD/module.prop"; sed -i 's/^versionCode=.*/versionCode=34001/' "$IMOD/module.prop"
+IMOD="$TD/imod"; mkdir -p "$IMOD"; cp "$ROOT/module.prop" "$IMOD/module.prop"
 MODDIR="$IMOD"; printf '#VERSION=99999\n' > "$INTEGRITY_MANIFEST_FILE"
 if integrity_check_once; then echo 'mismatched baseline accepted' >&2; exit 1; fi
 grep -q '^RESULT=REVIEW_REQUIRED$' "$INTEGRITY_STATUS_FILE"

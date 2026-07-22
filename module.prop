@@ -1,7 +1,7 @@
 id=RescueX
 name=RescueX 自动救砖
-version=v3.4.0-r1-beta
-versionCode=34001
+version=v3.4.0
+versionCode=34000
 author=jiayuxuan123
-description=[Beta安全模式] 事务锁/无证据不恢复/补丁TTL/APP解冻禁用/保守重启 | v3.4.0-r1-beta
+description=[守护中] 事务锁/无证据不恢复/补丁TTL/保守重启/完整性复核 | v3.4.0
 updateJson=https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json

@@ -1,6 +1,6 @@
 {
-  "version": "v3.4.0-r1-beta",
-  "versionCode": 34001,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.4.0-r1-beta/RescueX-v3.4.0-r1-beta.zip",
+  "version": "v3.4.0",
+  "versionCode": 34000,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.4.0/RescueX-v3.4.0.zip",
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md"
 }

@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.4.0-r1-beta - common.sh
+# RescueX v3.4.0 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -10,13 +10,12 @@
 # v3.0.0 改进（专业级升级）：
 # - 嫌疑模块追踪：save_good_modules / detect_suspect_modules（BG 核心功能）
 # - 三级渐进式救砖：嫌疑禁用 → 全量+脚本锁定 → APP 解冻
-# - 脚本目录禁用：disable_script_dirs（全量救砖时锁定 service.d 等）
 # - APP 解冻：unfreeze_apps（删除 package-restrictions.xml）
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.4.0-r1-beta"
-RX_VERSION_CODE=34001
+RX_VERSION="v3.4.0"
+RX_VERSION_CODE=34000
 
 # ============================================================
 # 路径初始化
@@ -48,9 +47,6 @@ _rescuex_init_paths() {
     AUTO_SNAPSHOT_FILE="$SNAPSHOT_DIR/auto-snap-latest.txt"
     AUTO_SNAPSHOT_SESSION_FILE="$STATE_DIR/auto_snapshot_session"
     MAX_MANUAL_SNAPSHOTS=5
-    SCRIPT_RISK_ALERT_FILE="$STATE_DIR/script_risk_alert.conf"
-    SCRIPT_RISK_QUARANTINE_DIR="$STATE_DIR/script_risk_quarantine"
-    SCRIPT_LOCK_RECORD_FILE="$STATE_DIR/script_lock_records.conf"
 
     INTEGRITY_MANIFEST_FILE="$STATE_DIR/integrity.manifest"
     INTEGRITY_STATUS_FILE="$STATE_DIR/integrity_status"
@@ -166,7 +162,7 @@ sync_to_persist() {
     mkdir -p "$PERSIST_DIR" 2>/dev/null
     normalize_snapshot_storage
     sync_removable_persist_state_files
-    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session script_lock_records.conf integrity.manifest; do
+    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session integrity.manifest; do
         [ -f "$STATE_DIR/$f" ] && cp "$STATE_DIR/$f" "$PERSIST_DIR/$f" 2>/dev/null
     done
     # 快照目录
@@ -185,7 +181,7 @@ sync_to_persist() {
 restore_from_persist() {
     [ ! -d "$PERSIST_DIR" ] && return 1
     local restored=0
-    for f in config.conf whitelist.conf boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session script_lock_records.conf integrity.manifest; do
+    for f in config.conf whitelist.conf boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session integrity.manifest; do
         if [ -f "$PERSIST_DIR/$f" ] && [ ! -f "$STATE_DIR/$f" ]; then
             cp "$PERSIST_DIR/$f" "$STATE_DIR/$f" 2>/dev/null && restored=$((restored + 1))
         fi
@@ -578,25 +574,12 @@ _kill_by_cmdline() {
 }
 
 # 停止当前启动周期中已经运行的目标模块脚本。
-# disable 标记主要作用于下一次启动；脚本拦截发生在 post-fs-data 后，还需要结束当前入口进程。
+# disable 标记主要作用于下一次启动；模块禁用只影响下一次启动；当前启动过程不主动终止其他模块脚本。
 _stop_module_script_processes() {
-    local module_dir="$1" shadow_dir="$2" p pid cmdline
-    for p in /proc/[0-9]*; do
-        pid="${p#/proc/}"
-        [ "$pid" = "$$" ] && continue
-        [ -f "$p/cmdline" ] || continue
-        cmdline=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)
-        case "$cmdline" in
-            *"$module_dir"/*.sh*|*"$module_dir"/*/\*.sh*|*"$shadow_dir"/*.sh*|*"$shadow_dir"/*/\*.sh*)
-                kill "$pid" 2>/dev/null || true
-                ;;
-        esac
-    done
+    # v3.4: Script interception was removed. Do not terminate other modules' processes.
+    return 0
 }
 
-# 带超时地读取块设备前几个字节；优先用 timeout 命令，
-# 不可用时用后台 dd + 轮询等待的方式手动实现超时，避免慢速 eMMC 卡死启动流程
-# 用法: _dd_read_with_timeout <device> <timeout_sec>
 _dd_read_with_timeout() {
     local dev="$1" tmo="${2:-2}"
     _check_has_timeout
@@ -900,78 +883,6 @@ clear_suspect_log() {
     return 0
 }
 
-clear_script_risk_alert() {
-    # 清除展示提醒，保留模块 disable 标记和被隔离脚本。
-    # 恢复脚本必须由显式的模块恢复动作触发，避免清提醒同时解除安全拦截。
-    if [ ! -f "$SCRIPT_RISK_ALERT_FILE" ]; then
-        return 2
-    fi
-    rm -f "$SCRIPT_RISK_ALERT_FILE" 2>/dev/null || return 1
-    log_rescue_action "SCRIPT_RISK_ALERT_CLEAR" "manual"
-    return 0
-}
-
-_get_file_mode() {
-    local target="$1" mode
-    [ -e "$target" ] || return 1
-    mode=$(stat -c %a "$target" 2>/dev/null || stat -f %Lp "$target" 2>/dev/null || echo "")
-    case "$mode" in ''|*[!0-7]*) mode=755 ;; esac
-    printf '%s\n' "$mode"
-}
-
-_record_script_lock() {
-    local target="$1" mode="$2" quarantine="${3:-}"
-    [ -n "$target" ] || return 1
-    case "$target" in *'|'*) return 1 ;; esac
-    case "$quarantine" in *'|'*) return 1 ;; esac
-    mkdir -p "$STATE_DIR" 2>/dev/null
-    grep -F "|$target|" "$SCRIPT_LOCK_RECORD_FILE" >/dev/null 2>&1 && return 0
-    printf '%s|%s|%s\n' "$mode" "$target" "$quarantine" >> "$SCRIPT_LOCK_RECORD_FILE" 2>/dev/null || return 1
-    chmod 0600 "$SCRIPT_LOCK_RECORD_FILE" 2>/dev/null
-    return 0
-}
-
-restore_script_locks() {
-    [ -f "$SCRIPT_LOCK_RECORD_FILE" ] || return 0
-    local scope="${1:-all}"
-    local tmp_file="${SCRIPT_LOCK_RECORD_FILE}.tmp.$$"
-    local mode target quarantine restored=0 kept=0
-    : > "$tmp_file" 2>/dev/null || return 1
-    while IFS='|' read -r mode target quarantine || [ -n "$mode$target$quarantine" ]; do
-        case "$mode" in ''|*[!0-7]*) mode=755 ;; esac
-        [ -n "$target" ] || continue
-        case "$target" in /data/adb/*|"$STATE_DIR"/*|"$MODDIR"/*) ;; *) continue ;; esac
-        if [ "$scope" = "permissions" ] && [ -n "$quarantine" ]; then
-            printf '%s|%s|%s\n' "$mode" "$target" "$quarantine" >> "$tmp_file"
-            kept=$((kept + 1))
-            continue
-        fi
-        if [ -n "$quarantine" ] && [ -f "$quarantine" ]; then
-            if [ ! -e "$target" ]; then
-                mv -f "$quarantine" "$target" 2>/dev/null || {
-                    printf '%s|%s|%s\n' "$mode" "$target" "$quarantine" >> "$tmp_file"
-                    kept=$((kept + 1))
-                    continue
-                }
-            fi
-        fi
-        if [ -e "$target" ]; then
-            chmod "$mode" "$target" 2>/dev/null
-            restored=$((restored + 1))
-        fi
-    done < "$SCRIPT_LOCK_RECORD_FILE"
-    if [ "$kept" -gt 0 ]; then
-        mv -f "$tmp_file" "$SCRIPT_LOCK_RECORD_FILE" 2>/dev/null
-        chmod 0600 "$SCRIPT_LOCK_RECORD_FILE" 2>/dev/null
-    else
-        rm -f "$tmp_file" "$SCRIPT_LOCK_RECORD_FILE" 2>/dev/null
-        delete_persisted_state_file "script_lock_records.conf"
-    fi
-    [ "$restored" -gt 0 ] && log "已还原脚本锁定权限: $restored 个"
-    [ "$restored" -gt 0 ] && log_rescue_action "RESTORE_SCRIPT_LOCKS" "restored=$restored,kept=$kept"
-    return 0
-}
-
 _list_current_module_ids() {
     local base mod_id mod_dir
     for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
@@ -1043,12 +954,6 @@ manual_save_good_modules() {
     return 0
 }
 
-manual_lock_script_dirs() {
-    disable_script_dirs
-    printf 'LOCKED=%s\n' "${SCRIPT_DIRS_LOCKED_LAST:-0}"
-    return 0
-}
-
 manual_unfreeze_apps() {
     app_unfreeze
     printf '%s\n' "${APP_UNFREEZE_LAST_RESULT:-SKIP}"
@@ -1106,7 +1011,7 @@ delete_persisted_state_file() {
 
 sync_removable_persist_state_files() {
     local file_name
-    for file_name in patch_update_flag rescued_disabled.list auto_snapshot_session script_lock_records.conf; do
+    for file_name in patch_update_flag rescued_disabled.list auto_snapshot_session; do
         [ -f "$STATE_DIR/$file_name" ] && continue
         delete_persisted_state_file "$file_name"
     done
@@ -1237,17 +1142,6 @@ manual_generate_rescue_decision_report() {
     generate_rescue_decision_report
 }
 
-manual_clear_script_risk_alert() {
-    if clear_script_risk_alert; then
-        printf 'ALERT_CLEARED=1\n'
-        return 0
-    fi
-    case "$?" in
-        2) printf 'ALERT_ALREADY_CLEAR=1\n'; return 0 ;;
-        *) printf 'ALERT_CLEARED=0\n'; return 1 ;;
-    esac
-}
-
 send_root_notification() {
     local title="$1"
     local text="$2"
@@ -1259,238 +1153,24 @@ send_root_notification() {
     return 1
 }
 
-_write_script_risk_alert() {
-    local module_id="$1"
-    local script_path="$2"
-    local reason="$3"
-    local action="$4"
-    local detected_at
-    detected_at=$(get_log_time)
-    _write_file_atomic "$SCRIPT_RISK_ALERT_FILE" "DETECTED=1
-MODULE_ID=${module_id}
-SCRIPT_PATH=${script_path}
-REASON=${reason}
-ACTION=${action}
-DETECTED_AT=${detected_at}
-NOTIFIED=0
-" || return 1
-    chmod 0600 "$SCRIPT_RISK_ALERT_FILE" 2>/dev/null
-    return 0
-}
-
-_mark_script_risk_alert_notified() {
-    [ -f "$SCRIPT_RISK_ALERT_FILE" ] || return 1
-    local tmp_file="$SCRIPT_RISK_ALERT_FILE.tmp.$$"
-    local changed=0 k v
-    : > "$tmp_file" 2>/dev/null || return 1
-    while IFS='=' read -r k v || [ -n "$k$v" ]; do
-        [ -z "$k" ] && continue
-        if [ "$k" = "NOTIFIED" ]; then
-            printf 'NOTIFIED=1\n' >> "$tmp_file"
-            changed=1
-        else
-            printf '%s=%s\n' "$k" "$v" >> "$tmp_file"
-        fi
-    done < "$SCRIPT_RISK_ALERT_FILE"
-    [ "$changed" -eq 1 ] || printf 'NOTIFIED=1\n' >> "$tmp_file"
-    mv -f "$tmp_file" "$SCRIPT_RISK_ALERT_FILE" 2>/dev/null || return 1
-    chmod 0600 "$SCRIPT_RISK_ALERT_FILE" 2>/dev/null
-    return 0
-}
-
-notify_pending_script_risk_alert() {
-    [ -f "$SCRIPT_RISK_ALERT_FILE" ] || return 1
-    local module_id="unknown" script_path="unknown" reason="high-risk script" action_taken="blocked" notified=0 k v
-    while IFS='=' read -r k v || [ -n "$k$v" ]; do
-        [ -z "$k" ] && continue
-        case "$k" in
-            MODULE_ID) module_id="$v" ;;
-            SCRIPT_PATH) script_path="$v" ;;
-            REASON) reason="$v" ;;
-            ACTION) action_taken="$v" ;;
-            NOTIFIED) notified="$v" ;;
-        esac
-    done < "$SCRIPT_RISK_ALERT_FILE"
-    [ "$notified" = "1" ] && return 0
-    send_root_notification "RescueX 安全提醒" "已拦截高风险脚本: ${module_id} (${reason})" || return 1
-    log "已发送高风险脚本通知: $module_id | $script_path | $reason"
-    _mark_script_risk_alert_notified
-    return 0
-}
-
-detect_destructive_script_content() {
-    local target="$1"
-    [ -f "$target" ] || return 1
-
-    # 仅把 Android 核心数据根、模块根和共享存储根视为高风险删除目标。
-    # 任意 /data/<module-private-dir> 都属于普通文件生命周期操作，允许模块清理自身目录。
-    local content
-    content=$(grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null)
-
-    # 模块自身的升级/卸载流程可能会清理自己的安装目录或隐藏目录。
-    # 传入当前模块目录后，将这两个自有路径从风险扫描中排除，继续检查同一行中的其他敏感路径。
-    local allowed_module_dir="${2:-}" allowed_module_id escaped_module_id
-    if [ -n "$allowed_module_dir" ]; then
-        allowed_module_dir=${allowed_module_dir%/}
-        allowed_module_id=${allowed_module_dir##*/}
-        case "$allowed_module_id" in
-            ''|*[!A-Za-z0-9._-]*) allowed_module_id='' ;;
-        esac
-        if [ -n "$allowed_module_id" ]; then
-            escaped_module_id=$(printf '%s' "$allowed_module_id" | sed 's/[.[\*^$\\]/\\&/g')
-            # 先替换隐藏目录，再替换可见目录，避免可见路径规则吃掉隐藏目录中的后缀。
-            content=$(printf '%s\n' "$content" | sed \
-                -e "s#/data/adb/modules/\\.${escaped_module_id}#MODULE_SELF#g" \
-                -e "s#/data/adb/modules/${escaped_module_id}#MODULE_SELF#g")
-        fi
-    fi
-
-    printf '%s\n' "$content" | grep -Eiq '(^|[;&|[:space:]])rm[[:space:]]+-[[:alnum:]]*r[[:alnum:]]*f([[:space:]]+|[[:space:]]+--[[:space:]]+).*(/data([[:space:]]|$)|/data/(data|user|system|misc|property|vendor|media|app|dalvik-cache|cache|metadata|persist)(/|[[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)([[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)/[^/[:space:]]+/?([[:space:]]|$)|/sdcard([/[:space:]]|$)|/storage(/emulated)?(/|[[:space:]]|$))' && {
-        echo 'rm-rf-sensitive-path'
-        return 0
-    }
-
-    # find 删除规则与 rm 保持同一套敏感根目录，避免再次把普通 /data 子目录扩大解释为擦除。
-    printf '%s\n' "$content" | grep -Eiq 'find[[:space:]]+(/data([[:space:]]|$)|/data/(data|user|system|misc|property|vendor|media|app|dalvik-cache|cache|metadata|persist)(/|[[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)([[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)/[^/[:space:]]+/?([[:space:]]|$)|/sdcard([/[:space:]]|$)|/storage(/emulated)?(/|[[:space:]]|$)).*-delete' && {
-        echo 'find-delete-sensitive-path'
-        return 0
-    }
-    printf '%s\n' "$content" | grep -Eiq '(^|[;&|[:space:]])(mkfs([.][[:alnum:]_-]+)?|mke2fs|make_f2fs|newfs_msdos|wipefs|blkdiscard)([[:space:]]|$)' && {
-        echo 'format-command'
-        return 0
-    }
-    printf '%s\n' "$content" | grep -Eiq 'dd[[:space:]].*of=/dev/(block|mmcblk|nvme|sd[a-z])' && {
-        echo 'raw-block-write'
-        return 0
-    }
-    printf '%s\n' "$content" | grep -Eiq '(recovery|twrp|toybox)[[:space:]].*(wipe|format)|(^|[;&|[:space:]])sm[[:space:]]+format([[:space:]]|$)|(^|[;&|[:space:]])vdc[[:space:]].*format' && {
-        echo 'wipe-or-format-invocation'
-        return 0
-    }
-    return 1
-}
-
 _disable_module_by_dir() {
     local module_dir="$1"
     [ -d "$module_dir" ] || return 1
-    local module_id module_base shadow_dir shadow_script shadow_mode
+    local module_id module_base shadow_dir
     module_id=$(basename "${module_dir%/}")
     disable_module_at_dir "$module_dir" "$module_id" || return 1
-    local script mode
-    for script in "$module_dir/post-fs-data.sh" "$module_dir/service.sh" "$module_dir/post-mount.sh" "$module_dir/boot-completed.sh"; do
-        [ -f "$script" ] || continue
-        mode=$(_get_file_mode "$script")
-        _record_script_lock "$script" "$mode"
-        chmod 000 "$script" 2>/dev/null
-    done
 
-    # 部分模块会在运行时复制到同一管理器目录下的隐藏目录，例如 .<module_id>。
-    # 只禁用可见目录无法阻止已经完成复制的入口脚本继续参与下一次启动。
+    # Some managers keep an implementation shadow; mark it disabled too, but never chmod or move scripts.
     module_base=${module_dir%/*}
     shadow_dir="$module_base/.$module_id"
     if [ -d "$shadow_dir" ]; then
         touch "$shadow_dir/disable" 2>/dev/null || return 1
         [ -f "$shadow_dir/disable" ] || return 1
-        for shadow_script in "$shadow_dir/post-fs-data.sh" "$shadow_dir/service.sh" "$shadow_dir/post-mount.sh" "$shadow_dir/boot-completed.sh"; do
-            [ -f "$shadow_script" ] || continue
-            shadow_mode=$(_get_file_mode "$shadow_script")
-            _record_script_lock "$shadow_script" "$shadow_mode"
-            chmod 000 "$shadow_script" 2>/dev/null || return 1
-        done
         log "已同步禁用模块隐藏副本: $shadow_dir"
     fi
-    _stop_module_script_processes "$module_dir" "$shadow_dir"
     return 0
 }
 
-_quarantine_script_file() {
-    local target="$1"
-    [ -f "$target" ] || return 1
-    mkdir -p "$SCRIPT_RISK_QUARANTINE_DIR" 2>/dev/null
-    local mode quarantine
-    mode=$(_get_file_mode "$target")
-    quarantine="$SCRIPT_RISK_QUARANTINE_DIR/$(basename "$target").$(date +%s 2>/dev/null || echo 0).$$.blocked"
-    local suffix=0
-    while [ -e "$quarantine" ]; do
-        suffix=$((suffix + 1))
-        quarantine="$SCRIPT_RISK_QUARANTINE_DIR/$(basename "$target").$(date +%s 2>/dev/null || echo 0).$$.$suffix.blocked"
-    done
-    _record_script_lock "$target" "$mode" "$quarantine"
-    if mv -f "$target" "$quarantine" 2>/dev/null; then
-        chmod 0600 "$quarantine" 2>/dev/null || return 1
-        return 0
-    else
-        chmod 000 "$target" 2>/dev/null
-        cp "$target" "$quarantine" 2>/dev/null || return 1
-        chmod 0600 "$quarantine" 2>/dev/null || return 1
-        return 0
-    fi
-}
-
-scan_and_block_destructive_scripts() {
-    local hits=0 base mod_dir mod_id candidate reason rel label
-    for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
-        [ -z "$base" ] || [ ! -d "$base" ] && continue
-        for mod_dir in "$base"/*/; do
-            [ -d "$mod_dir" ] || continue
-            mod_id=$(basename "$mod_dir")
-            [ "$mod_id" = "$SELF_ID" ] && continue
-            [ -f "${mod_dir}disable" ] && continue
-            case "$mod_id" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
-            for rel in post-fs-data.sh service.sh post-mount.sh boot-completed.sh service.d post-fs-data.d post-mount.d boot-completed.d; do
-                candidate="${mod_dir}${rel}"
-                if [ -f "$candidate" ]; then
-                    reason=$(detect_destructive_script_content "$candidate" "$mod_dir" 2>/dev/null) || continue
-                    _disable_module_by_dir "$mod_dir" || {
-                        log "高风险脚本模块禁用失败，保留原脚本: $mod_id | $candidate"
-                        continue
-                    }
-                    _quarantine_script_file "$candidate"
-                    _write_script_risk_alert "$mod_id" "$candidate" "$reason" "module-disabled"
-                    log "拦截高风险脚本模块: $mod_id | $candidate | $reason"
-                    log_rescue_action "SCRIPT_RISK_BLOCK" "$mod_id|$candidate|$reason"
-                    hits=$((hits + 1))
-                    break
-                elif [ -d "$candidate" ]; then
-                    for label in "$candidate"/*.sh "$candidate"/*; do
-                        [ -f "$label" ] || continue
-                        reason=$(detect_destructive_script_content "$label" "$mod_dir" 2>/dev/null) || continue
-                        _disable_module_by_dir "$mod_dir" || {
-                            log "高风险脚本模块禁用失败，保留原脚本: $mod_id | $label"
-                            continue
-                        }
-                        _quarantine_script_file "$label"
-                        _write_script_risk_alert "$mod_id" "$label" "$reason" "module-disabled"
-                        log "拦截高风险脚本模块: $mod_id | $label | $reason"
-                        log_rescue_action "SCRIPT_RISK_BLOCK" "$mod_id|$label|$reason"
-                        hits=$((hits + 1))
-                        break
-                    done
-                    [ "$hits" -gt 0 ] && break
-                fi
-            done
-        done
-    done
-
-    for label in /data/adb/post-fs-data.d /data/adb/service.d /data/adb/post-mount.d /data/adb/boot-completed.d /data/adb/ksu/service.d /data/adb/ap/service.d; do
-        [ -d "$label" ] || continue
-        for candidate in "$label"/*.sh "$label"/*; do
-            [ -f "$candidate" ] || continue
-            reason=$(detect_destructive_script_content "$candidate" 2>/dev/null) || continue
-            _quarantine_script_file "$candidate"
-            _write_script_risk_alert "global-script" "$candidate" "$reason" "script-blocked"
-            log "拦截高风险全局脚本: $candidate | $reason"
-            log_rescue_action "SCRIPT_RISK_BLOCK" "global-script|$candidate|$reason"
-            hits=$((hits + 1))
-        done
-    done
-
-    printf '%s\n' "$hits"
-    return 0
-}
-
-# 补丁回滚逻辑（轻量级，不清整机数据）
-# v2.4 核心防数据丢失机制
 _patch_rollback_unsafe_legacy() {
     log "===== 触发补丁回滚（轻量级）====="
 
@@ -1843,7 +1523,7 @@ fix_last_rescue_time() {
 # ============================================================
 
 # 统一写入 Root 管理器使用的 disable 标记。
-# 所有自动救砖、手动操作和高风险脚本拦截都必须通过这里确认实际写入成功。
+# 所有自动救砖和手动操作都必须通过这里确认实际写入成功。
 disable_module_at_dir() {
     local mod_dir="$1"
     local mod_id="$2"
@@ -2224,7 +1904,6 @@ restore_snapshot() {
             disable_module_at_dir "$found_dir" "$mod_id" >/dev/null 2>&1 || true
         fi
     done < "$snap_file"
-    restore_script_locks permissions
     return 0
 }
 
@@ -2288,9 +1967,6 @@ restore_good_modules_baseline() {
             fi
         fi
     done < "$GOOD_MODULES_FILE"
-
-    restore_script_locks permissions
-
     log "已恢复稳定基线: changed=$changed skipped=$skipped"
     log_rescue_action "BASELINE_RESTORE" "changed=$changed,skipped=$skipped"
     printf 'CHANGED=%s\nSKIPPED=%s\n' "$changed" "$skipped"
@@ -2346,7 +2022,7 @@ generate_rescue_decision_report() {
     elif [ "$patch_detected" = "true" ]; then
         recommendation="当前处于补丁相关窗口，优先核对补丁模块和 update 缓存恢复结果。"
     elif [ "$fail_count" -ge "$threshold" ] 2>/dev/null; then
-        recommendation="失败计数已经达到阈值，建议立即恢复稳定基线并检查白名单与脚本目录。"
+        recommendation="失败计数已经达到阈值，建议立即恢复稳定基线并检查白名单。"
     else
         recommendation="当前适合先保留现状，继续观察下一次完整启动，并保留最新诊断报告。"
     fi
@@ -2452,7 +2128,6 @@ toggle_single_module() {
         enable)
             [ ! -f "${found_dir}/disable" ] && return 2  # already enabled
             rm -f "${found_dir}/disable" 2>/dev/null
-            restore_script_locks
             log "手动启用模块: $mod_id"
             log_rescue_action "MANUAL_ENABLE" "$mod_id"
             return 0
@@ -2981,72 +2656,6 @@ generate_report() {
 # 第三方脚本在救砖模式下的"最后一口气"执行导致问题
 # 覆盖 Magisk / KernelSU / APatch 的所有脚本目录
 # ============================================================
-disable_script_dirs() {
-    log "锁定脚本目录权限，防止救砖期间执行"
-    local locked=0
-    local target mode
-
-    # Magisk / KSU / APatch 共有的脚本目录
-    for dir in /data/adb/service.d /data/adb/post-fs-data.d; do
-        if [ -d "$dir" ] && [ "$(ls -A "$dir" 2>/dev/null)" ]; then
-            for target in "$dir"/*; do
-                [ -f "$target" ] || continue
-                mode=$(_get_file_mode "$target")
-                _record_script_lock "$target" "$mode"
-                chmod 000 "$target" 2>/dev/null
-            done
-            locked=$((locked + 1))
-            log "已锁定: $dir"
-        fi
-    done
-
-    # KernelSU / APatch 额外支持的目录
-    for dir in /data/adb/post-mount.d /data/adb/boot-completed.d; do
-        if [ -d "$dir" ] && [ "$(ls -A "$dir" 2>/dev/null)" ]; then
-            for target in "$dir"/*; do
-                [ -f "$target" ] || continue
-                mode=$(_get_file_mode "$target")
-                _record_script_lock "$target" "$mode"
-                chmod 000 "$target" 2>/dev/null
-            done
-            locked=$((locked + 1))
-            log "已锁定: $dir"
-        fi
-    done
-
-    # 兼容旧版 KSU 路径
-    for dir in /data/adb/ksu/service.d /data/adb/ap/service.d; do
-        [ -d "$dir" ] || continue
-        [ "$(ls -A "$dir" 2>/dev/null)" ] || continue
-        for target in "$dir"/*; do
-            [ -f "$target" ] || continue
-            mode=$(_get_file_mode "$target")
-            _record_script_lock "$target" "$mode"
-            chmod 000 "$target" 2>/dev/null
-        done
-        locked=$((locked + 1))
-        log "已锁定: $dir"
-    done
-
-    log "脚本目录锁定完成 ($locked 个目录)"
-    log_rescue_action "LOCK_SCRIPT_DIRS" "locked=$locked"
-    SCRIPT_DIRS_LOCKED_LAST="$locked"
-}
-
-# ============================================================
-# v3.0.0: 嫌疑模块追踪（Brick Guardian 核心功能）
-# 开机成功后记录当前启用的模块列表（"已知良好"清单）
-# 救砖时对比当前模块与已知良好清单，精准定位新安装/新启用的模块
-# ============================================================
-
-# 保存当前所有已安装模块列表为"已知正常"
-# 由 service.sh 在每次成功启动后调用
-# v3.0.0 BUG FIX: 保存 ALL 模块（含已禁用的），而非仅已启用的
-# 原逻辑只保存启用模块，导致之前被禁用的模块（如 Surfing）不在列表中，
-# 当其他模块（如测试模块）将其重新启用后，会被误判为"新出现的嫌疑模块"。
-# 修复后保存所有模块，用冒号前缀标记禁用状态：
-#   "modname" = 已启用
-#   ":modname" = 已禁用
 save_good_modules() {
     log "保存已知良好模块列表..."
     local count=0
@@ -3185,7 +2794,7 @@ detect_suspect_modules() {
 # ============================================================
 # v3.0.0: 三级渐进式救砖
 # 级别 0: 嫌疑禁用 - 只禁用新出现的新安装/新启用模块（精准击中）
-# 级别 1: 全量救砖 + 脚本目录锁定 - 禁用所有非白名单模块并锁定脚本目录
+# 级别 1: 全量救砖 - 禁用所有非白名单模块并锁定脚本目录
 # 级别 2: APP 解冻 - 删除 package-restrictions.xml 解冻被冻结的应用
 # ============================================================
 
@@ -3284,15 +2893,13 @@ suspect_rescue() {
     return 0
 }
 
-# 级别 1: 全量救砖 + 脚本目录锁定
+# 级别 1: 全量救砖
 full_rescue_with_scripts() {
-    log "===== 级别 1: 全量救砖 + 脚本目录锁定 ====="
+    log "===== 级别 1: 全量救砖 ====="
 
     # 先执行常规全量救砖
     full_rescue
 
-    # 锁定所有脚本目录
-    disable_script_dirs
 
     log_rescue_action "FULL_RESCUE_SCRIPTS" "all_modules_and_scripts_locked"
     log "全量+脚本救砖完成"
@@ -3330,7 +2937,7 @@ _three_level_rescue_unlocked() {
             fi
             ;;
         1)
-            log "当前救砖级别: 1 → 执行全量救砖 + 脚本目录锁定"
+            log "当前救砖级别: 1 → 执行全量救砖"
             full_rescue_with_scripts
             ;;
         2)
@@ -3352,7 +2959,7 @@ _rescuex_init_paths
 
 
 # ============================================================
-# v3.4.0-r1-beta：安全状态机覆盖层
+# v3.4.0：安全状态机覆盖层
 # 所有高风险自动路径默认 fail-closed。
 # ============================================================
 RX_STATE_SCHEMA_VERSION=2
@@ -3518,7 +3125,6 @@ reenable_all() {
     done < "$RESCUED_DISABLED_LIST"
     [ "$seen" -gt 0 ] || { log "拒绝恢复：清单没有有效模块"; return 1; }
     rm -f "$RESCUED_DISABLED_LIST"; delete_persisted_state_file rescued_disabled.list
-    restore_script_locks permissions
     log_rescue_action REENABLE_EXACT "evidence=$seen,enabled=$enabled"
     return 0
 }

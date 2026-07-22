@@ -1,4 +1,4 @@
-/* RescueX v3.4.0-r1-beta - WebUI 控制器
+/* RescueX v3.4.0 - WebUI 控制器
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -6,15 +6,14 @@
  * - 嫌疑模块追踪面板（已知良好模块列表对比）
  * - 三级救砖级别展示与手动重置
  * - APP 解冻功能（删除 package-restrictions.xml）
- * - 脚本目录锁定功能
  */
 
 (function () {
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.4.0-r1-beta';
-const APP_VERSION_CODE = 34001;
+const APP_VERSION = 'v3.4.0';
+const APP_VERSION_CODE = 34000;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -92,15 +91,6 @@ const I18N = {
         reboot: '重启设备',
         generate_decision_report: '生成救援决策报告',
         generate_report: '生成诊断报告',
-        script_risk_title: '高风险脚本拦截',
-        script_risk_badge: '已拦截',
-        script_risk_desc: '检测到疑似擦除/格式化脚本，RescueX 已优先拦截并禁用对应入口。',
-        script_risk_module: '模块',
-        script_risk_reason: '命中规则',
-        script_risk_action: '处理动作',
-        script_risk_time: '检测时间',
-        script_risk_clear: '清除提醒',
-        script_risk_toast: '检测到高风险脚本，已拦截并禁用相关入口',
         logs: '日志与历史',
         log: '日志',
         history: '历史',
@@ -122,7 +112,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.4.0-r1-beta：修复模块自身隐藏目录的误报。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.4.0：修复模块自身隐藏目录的误报。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -168,14 +158,6 @@ const I18N = {
         snapshot_failed: '操作失败',
         baseline_restored: '稳定基线已恢复，重启后生效',
         decision_report_title: '救援决策报告',
-        script_risk_reason_rm_rf: '敏感路径递归删除',
-        script_risk_reason_find_delete: '敏感路径批量删除',
-        script_risk_reason_format: '格式化命令',
-        script_risk_reason_dd: '原始块设备写入',
-        script_risk_reason_wipe: '擦除或格式化调用',
-        script_risk_action_module_disabled: '模块已禁用',
-        script_risk_action_script_blocked: '脚本已锁定',
-        script_risk_cleared: '高风险脚本提醒已清除',
         // 确认对话框
         confirm_title: '确认操作',
         confirm_disable_all: '将禁用除 RescueX 和白名单外的全部模块，重启后生效。是否继续？',
@@ -247,7 +229,7 @@ const I18N = {
         onboarding_ack: '我已了解，开始使用',
         onboarding_skip: '稍后再看',
         onboarding_new_features: 'v3.0 新功能',
-        onboarding_new_features_desc: '三级渐进式救砖（嫌疑禁用→全量+脚本锁定→APP解冻）、嫌疑模块精准追踪、脚本目录锁定、APP 自动解冻',
+        onboarding_new_features_desc: '三级渐进式救砖（嫌疑禁用→全量禁用→人工复核）、嫌疑模块精准追踪、保守 APP 状态保护',
         // 文档
         doc_close: '关闭',
         features_title: 'RescueX 功能介绍',
@@ -288,7 +270,6 @@ const I18N = {
         clear_suspect_log: '清除嫌疑日志',
         reset_rescue_level: '重置救砖级别',
         unfreeze_apps: 'APP 解冻',
-        lock_script_dirs: '锁定脚本目录',
         rescue_level_label: '当前救砖级别',
         rescue_level_0: '级别 0: 精准嫌疑禁用',
         rescue_level_1: '级别 1: 全量+脚本锁定',
@@ -296,8 +277,6 @@ const I18N = {
         unfreeze_confirm: '将删除 package-restrictions.xml 来解冻所有被冻结的应用。操作后需重启。是否继续？',
         unfreeze_done: 'APP 解冻完成，请重启设备',
         unfreeze_skip: '未发现需要解冻的限制文件',
-        lock_scripts_confirm: '将锁定所有脚本目录（service.d/post-fs-data.d 等）的执行权限。操作后需重启。是否继续？',
-        lock_scripts_done: '脚本目录已锁定，请重启设备',
         good_modules_saved: '已知良好模块列表已保存',
         suspect_cleared: '嫌疑日志已清除',
         rescue_level_reset: '救砖级别已重置为 0',
@@ -393,15 +372,6 @@ const I18N = {
         reboot: 'Reboot',
         generate_decision_report: 'Decision Report',
         generate_report: 'Generate Report',
-        script_risk_title: 'Risk Script Blocked',
-        script_risk_badge: 'Blocked',
-        script_risk_desc: 'A destructive wipe or format script was detected. RescueX blocked the entry point first.',
-        script_risk_module: 'Module',
-        script_risk_reason: 'Rule',
-        script_risk_action: 'Action',
-        script_risk_time: 'Detected',
-        script_risk_clear: 'Clear Alert',
-        script_risk_toast: 'High-risk script detected and blocked',
         logs: 'Logs & History',
         log: 'Log',
         history: 'History',
@@ -423,7 +393,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.4.0-r1-beta: fixes false positives for module self-hidden paths.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.4.0: fixes false positives for module self-hidden paths.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -464,14 +434,6 @@ const I18N = {
         snapshot_failed: 'Operation failed',
         baseline_restored: 'Known-good baseline restored, effective after reboot',
         decision_report_title: 'Rescue Decision Report',
-        script_risk_reason_rm_rf: 'Recursive delete on sensitive path',
-        script_risk_reason_find_delete: 'Bulk delete on sensitive path',
-        script_risk_reason_format: 'Format command',
-        script_risk_reason_dd: 'Raw block write',
-        script_risk_reason_wipe: 'Wipe or format invocation',
-        script_risk_action_module_disabled: 'Module disabled',
-        script_risk_action_script_blocked: 'Script blocked',
-        script_risk_cleared: 'Risk script alert cleared',
         confirm_title: 'Confirm',
         confirm_disable_all: 'This will disable all modules except RescueX and whitelisted ones. Effective after reboot. Continue?',
         confirm_enable_all: 'This will remove all disable marks (except RescueX). Continue?',
@@ -576,7 +538,6 @@ const I18N = {
         clear_suspect_log: 'Clear Suspect Log',
         reset_rescue_level: 'Reset Rescue Level',
         unfreeze_apps: 'APP Unfreeze',
-        lock_script_dirs: 'Lock Script Dirs',
         rescue_level_label: 'Current Rescue Level',
         rescue_level_0: 'Level 0: Precise Suspect Disable',
         rescue_level_1: 'Level 1: Full Disable + Lock Scripts',
@@ -584,8 +545,6 @@ const I18N = {
         unfreeze_confirm: 'This will delete package-restrictions.xml to unfreeze all frozen apps. Reboot required. Continue?',
         unfreeze_done: 'Apps unfrozen. Please reboot.',
         unfreeze_skip: 'No restriction files found.',
-        lock_scripts_confirm: 'This will lock all script directories (service.d/post-fs-data.d etc.). Reboot required. Continue?',
-        lock_scripts_done: 'Script directories locked. Please reboot.',
         good_modules_saved: 'Known good module list saved.',
         suspect_cleared: 'Suspect log cleared.',
         rescue_level_reset: 'Rescue level reset to 0.',
@@ -646,7 +605,6 @@ class RescueXUI {
         this.goodModuleStats = { enabled: 0, total: 0 };
         this.rescueLevel = 0;
         this._customDirs = [];
-        this.scriptRiskAlert = null;
         this.dashboardSnapshot = null;
         this.dashboardSnapshotFetchedAt = 0;
         this.dashboardSnapshotPromise = null;
@@ -671,11 +629,11 @@ class RescueXUI {
         // 若宿主容器压根未声明 ksu 变量（而非设为 undefined），直接引用会在严格模式下抛 ReferenceError
         this.isKsu = !!hasKsu;
         this.allowedActions = new Set([
-            'addCustomDir', 'checkUpdate', 'clearLog', 'clearScriptRiskAlert',
+            'addCustomDir', 'checkUpdate', 'clearLog',
             'clearSuspectLog', 'copyAuditLog', 'copyLog', 'deleteSnapshot',
             'deselectAllModules', 'disableAllModules', 'exportConfig', 'exportFullState',
             'exportLog', 'generateDecisionReport', 'generateReport', 'importConfig',
-            'lockScriptDirs', 'openReleases', 'openRepository', 'rebootDevice',
+            'openReleases', 'openRepository', 'rebootDevice',
             'reenableAllModules', 'refreshAuditLog', 'refreshLog', 'refreshModules',
             'refreshStats', 'removeCustomDir', 'resetRescueLevel', 'restoreBaseline',
             'restoreSnapshot', 'runIntegrityCheck', 'saveConfig', 'saveCustomDirs', 'saveGoodModules',
@@ -748,7 +706,6 @@ class RescueXUI {
         this.watchdogPidFile = `${this.stateDir}/watchdog_pid`;
         this.snapshotDir = `${this.stateDir}/snapshots`;
         this.customDirsFile = `${this.stateDir}/custom_dirs.conf`;
-        this.scriptRiskAlertFile = `${this.stateDir}/script_risk_alert.conf`;
     }
 
     async resolvePaths() {
@@ -840,7 +797,6 @@ done`;
                 this.loadStats({ silent: true, snapshot: dashboardSnapshot }),
                 this.loadAuditLog(),
                 this.loadBootTrend(),
-                this.loadScriptRiskAlert()
             ]);
         } finally {
             this.showLoading(false);
@@ -868,7 +824,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.4.0-r1-beta' : 'Automatic Boot Rescue v3.4.0-r1-beta';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.4.0' : 'Automatic Boot Rescue v3.4.0';
     }
 
     openExternal(url) {
@@ -1111,15 +1067,6 @@ done`;
             pushItem('ok', 'readiness_item_policy_ok_title', 'readiness_item_policy_ok_desc');
         }
 
-        if (this.scriptRiskAlert && this.scriptRiskAlert.DETECTED === '1') {
-            score -= 35;
-            items.unshift({
-                type: 'danger',
-                title: this.t('script_risk_title'),
-                desc: this.t('script_risk_desc')
-            });
-        }
-
         if (failCount >= Math.max(1, threshold - 1)) {
             score -= 20;
             pushItem('warn', 'readiness_item_fail_warn_title', 'readiness_item_fail_warn_desc');
@@ -1180,7 +1127,6 @@ done`;
                 this.loadCustomDirs(),
                 this.loadSuspectModules(),
                 this.loadRescueLevel(),
-                this.loadScriptRiskAlert()
             ]);
             // v3.0.1 PERF: 日志、历史、趋势图、管理器检测也并行
             await Promise.all([
@@ -1197,69 +1143,6 @@ done`;
             this.showLoading(false);
         }
     }
-
-    scriptRiskReasonLabel(reason) {
-        const map = {
-            'rm-rf-sensitive-path': this.t('script_risk_reason_rm_rf'),
-            'find-delete-sensitive-path': this.t('script_risk_reason_find_delete'),
-            'format-command': this.t('script_risk_reason_format'),
-            'raw-block-write': this.t('script_risk_reason_dd'),
-            'wipe-or-format-invocation': this.t('script_risk_reason_wipe')
-        };
-        return map[String(reason || '').trim()] || (reason || '--');
-    }
-
-    scriptRiskActionLabel(action) {
-        const map = {
-            'module-disabled': this.t('script_risk_action_module_disabled'),
-            'script-blocked': this.t('script_risk_action_script_blocked')
-        };
-        return map[String(action || '').trim()] || (action || '--');
-    }
-
-    async loadScriptRiskAlert() {
-        try {
-            const raw = await this.exec(`cat "${this.scriptRiskAlertFile}" 2>/dev/null`);
-            if (!raw || !raw.includes('DETECTED=')) {
-                this.scriptRiskAlert = null;
-                this.renderScriptRiskAlert();
-                this.renderReadiness();
-                return;
-            }
-            this.scriptRiskAlert = this.parseKV(raw);
-            this.renderScriptRiskAlert();
-            this.renderReadiness();
-        } catch (e) {
-            this.scriptRiskAlert = null;
-            this.renderScriptRiskAlert();
-            this.renderReadiness();
-        }
-    }
-
-    renderScriptRiskAlert() {
-        const card = this.qs('#script-risk-card');
-        if (!card) return;
-        const alert = this.scriptRiskAlert;
-        if (!alert || alert.DETECTED !== '1') {
-            card.classList.add('hidden');
-            return;
-        }
-        card.classList.remove('hidden');
-        this.setText('#script-risk-module', alert.MODULE_ID || '--');
-        this.setText('#script-risk-reason', this.scriptRiskReasonLabel(alert.REASON));
-        this.setText('#script-risk-action', this.scriptRiskActionLabel(alert.ACTION));
-        this.setText('#script-risk-time', alert.DETECTED_AT ? this.formatTimeValue(alert.DETECTED_AT) : '--');
-        this.setText('#script-risk-path', alert.SCRIPT_PATH || '--');
-
-        const seenKey = `rescuex_seen_risk_${alert.DETECTED_AT || '0'}_${alert.MODULE_ID || 'unknown'}`;
-        try {
-            if (!localStorage.getItem(seenKey)) {
-                localStorage.setItem(seenKey, '1');
-                this.toast(this.t('script_risk_toast'), 'error', 5000);
-            }
-        } catch (_) {}
-    }
-
     formatTimeValue(value) {
         const text = String(value || '').trim();
         if (/^[0-9]+$/.test(text)) {
@@ -1722,23 +1605,6 @@ done`;
             this.toast(this.t('snapshot_failed'), 'error');
         }
     }
-
-    async clearScriptRiskAlert() {
-        try {
-            const result = await this.exec(`MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null && manual_clear_script_risk_alert`);
-            if (!/ALERT_CLEARED=1|ALERT_ALREADY_CLEAR=1/.test(result)) {
-                this.toast(this.t('save_failed'), 'error');
-                return;
-            }
-            this.scriptRiskAlert = null;
-            this.renderScriptRiskAlert();
-            this.renderReadiness();
-            this.toast(this.t('script_risk_cleared'), 'success');
-        } catch (e) {
-            this.toast(this.t('save_failed'), 'error');
-        }
-    }
-
     // === 配置操作 ===
     toggleEnabled(e) {
         this.config.ENABLED = e.target.checked ? 'true' : 'false';
@@ -2332,7 +2198,6 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                     this.loadBootTrend();
                     this.loadSuspectModules();
                     this.loadRescueLevel();
-                    this.loadScriptRiskAlert();
                     this._statsCounter = 0;
                 }
             }
@@ -2649,8 +2514,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 <li><strong>启动统计</strong>（v2.5）：成功率、平均耗时、救砖时间线</li>
                 <li><strong>三级渐进式救砖</strong>（v3.0）：嫌疑禁用 → 全量+脚本锁定 → APP 解冻，逐级升级不遗漏任何可能</li>
                 <li><strong>嫌疑模块追踪</strong>（v3.0）：启动成功后自动记录已知良好列表，下次失败精准对比定位新增/新启用模块</li>
-                <li><strong>脚本目录锁定</strong>（v3.0）：全量救砖时同时锁定 service.d/post-fs-data.d 等目录的执行权限</li>
-                <li><strong>APP 自动解冻</strong>（v3.0）：删除 package-restrictions.xml 解冻被 PM 冻结的关键应用</li>
+                                <li><strong>APP 自动解冻</strong>（v3.0）：删除 package-restrictions.xml 解冻被 PM 冻结的关键应用</li>
             </ul>
             <h3>安全设计</h3>
             <ul>
@@ -3310,23 +3174,6 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
     }
 
     // === v3.0.1: 锁定脚本目录 ===
-    async lockScriptDirs() {
-        const confirm = await this.confirmDialog(
-            this.t('confirm_title'),
-            this.t('lock_scripts_confirm'),
-            this.t('btn_confirm'), 'btn-danger'
-        );
-        if (!confirm) return;
-        this.showLoading(true);
-        try {
-            const result = await this.exec(`. "${this.basePath}/common.sh" && manual_lock_script_dirs`);
-            this.toast(this.t('lock_scripts_done'), 'success');
-        } catch (e) {
-            this.toast(this.t('save_failed'), 'error');
-        }
-        this.showLoading(false);
-    }
-
     // === Modal ===
     confirmDialog(title, message, okText, okClass) {
         return new Promise(resolve => {

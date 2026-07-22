@@ -1,14 +1,13 @@
 #!/system/bin/sh
-# RescueX v3.4.0-r1-beta - customize.sh
+# RescueX v3.4.0 - customize.sh
 
 # v3.0.1 改进（专业级升级）：
 # - 三级渐进式救砖支持
 # - 嫌疑模块追踪基础设施初始化
-# - 脚本目录锁定机制
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.4.0-r1-beta"
+RX_VERSION="v3.4.0"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -321,7 +320,7 @@ ui_print "  · OTA 超时: 900 秒 (15 分钟)"
 ui_print "  · 补丁超时: 180 秒"
 ui_print "  · 渐进式救砖: 启用"
 ui_print "  · 启动模式感知: 启用"
-  ui_print "  · 数据持久化: 启用 (v3.4.0-r1-beta)"
+  ui_print "  · 数据持久化: 启用 (v3.4.0)"
 ui_print "  · DRY_RUN: 关闭"
 ui_print ""
 ui_print "  通过 WebUI 可调整全部参数"

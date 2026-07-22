@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.4.0-r1-beta - service.sh
+# RescueX v3.4.0 - service.sh
 # 系统完全启动后执行，标记启动成功
 #
 # v3.0.1 改进：
@@ -178,7 +178,6 @@ unset _boot_done
 sleep 3
 log "系统启动完成（等待 ${WAIT_SEC}s + 3s）"
 
-notify_pending_script_risk_alert >/dev/null 2>&1
 
 # 3. 安全停止看门狗
 stop_watchdog
@@ -193,7 +192,6 @@ update_status_fields "$BOOT_END" 1 "SUCCESS" 0 "$CURRENT_UPTIME"
 fix_last_rescue_time
 
 # 启动成功后回滚救砖期间的脚本权限锁定和风险脚本隔离记录
-restore_script_locks permissions
 
 # 从状态文件读取计算后的 boot_duration 用于日志
 BOOT_DURATION=0

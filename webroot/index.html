@@ -18,7 +18,7 @@
                 <div class="logo-icon">R</div>
                 <div class="brand-text">
                     <div class="title">RescueX</div>
-                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.4.0-r1-beta</div>
+                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.4.0</div>
                 </div>
             </div>
             <div class="appbar-actions">
@@ -37,41 +37,7 @@
             <div class="status-meta" id="hero-meta">--</div>
         </div>
 
-        <div class="card risk-alert-card hidden" id="script-risk-card">
-            <div class="card-header">
-                <h2><span class="icon">!</span> <span data-i18n="script_risk_title">高风险脚本拦截</span></h2>
-                <span class="badge badge-err" id="script-risk-badge" data-i18n="script_risk_badge">已拦截</span>
-            </div>
-            <div class="card-body">
-                <p class="desc-text" id="script-risk-summary" data-i18n="script_risk_desc">检测到疑似擦除/格式化脚本，RescueX 已优先拦截并禁用对应入口。</p>
-                <div class="info-grid mt-16">
-                    <div class="info-tile">
-                        <div class="label" data-i18n="script_risk_module">模块</div>
-                        <div class="value" id="script-risk-module">--</div>
-                    </div>
-                    <div class="info-tile">
-                        <div class="label" data-i18n="script_risk_reason">命中规则</div>
-                        <div class="value" id="script-risk-reason">--</div>
-                    </div>
-                </div>
-                <div class="info-grid mt-8">
-                    <div class="info-tile">
-                        <div class="label" data-i18n="script_risk_action">处理动作</div>
-                        <div class="value" id="script-risk-action">--</div>
-                    </div>
-                    <div class="info-tile">
-                        <div class="label" data-i18n="script_risk_time">检测时间</div>
-                        <div class="value" id="script-risk-time">--</div>
-                    </div>
-                </div>
-                <div class="module-list mt-8">
-                    <div class="module-item mono-path" id="script-risk-path">--</div>
-                </div>
-                <div class="section-actions">
-                    <button class="btn btn-text" data-action="clearScriptRiskAlert" data-i18n="script_risk_clear">清除提醒</button>
-                </div>
-            </div>
-        </div>
+        
 
         <div class="card compact-card">
             <div class="card-header">
@@ -433,7 +399,7 @@
             </div>
             <div class="card-body">
                 <div class="notice-block">
-                        <div class="notice-kicker text-mono">v3.4.0-r1-beta</div>
+                        <div class="notice-kicker text-mono">v3.4.0</div>
                     <div class="notice-title" data-i18n="update_notice_title">完整性自检与脚本误报修复</div>
                     <p class="desc-text" data-i18n="update_notice_desc">新增轻量完整性自检，修复模块清理自身 /data 工作目录时被误判为擦除分区的问题。</p>
                     <div class="section-actions">
@@ -473,7 +439,6 @@
                 </div>
                 <div class="button-group mt-8">
                     <button class="btn btn-danger" data-action="unfreezeApps" data-i18n="unfreeze_apps">APP 解冻</button>
-                    <button class="btn btn-tonal" data-action="lockScriptDirs" data-i18n="lock_script_dirs">锁定脚本目录</button>
                 </div>
                 <div class="button-group mt-8">
                     <button class="btn btn-outlined" data-action="testWatchdog" data-i18n="test_watchdog">测试看门狗</button>
@@ -517,7 +482,7 @@
                 <div class="info-grid">
                     <div class="info-tile">
                         <div class="label" data-i18n="version">版本</div>
-                        <div class="value text-mono">v3.4.0-r1-beta</div>
+                        <div class="value text-mono">v3.4.0</div>
                     </div>
                     <div class="info-tile">
                         <div class="label" data-i18n="manager">管理器</div>
@@ -528,7 +493,7 @@
                         <div class="value text-mono">jiayuxuan123/RescueX</div>
                     </div>
                 </div>
-                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.4.0-r1-beta：修复模块自身隐藏目录的误报。</p>
+                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.4.0：修复模块自身隐藏目录的误报。</p>
                 <div class="section-actions">
                     <button class="btn btn-text btn-sm" data-action="checkUpdate" data-i18n="check_update">检查更新</button>
                     <button class="btn btn-text btn-sm" data-action="showFeatures" data-i18n="feature_intro">功能介绍</button>

@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.4.0-r1-beta - Action 入口
+# RescueX v3.4.0 - Action 入口
 # 兼容 KernelSU / KsuWebUI / MMRL / Magisk + APatch
 #
 # v3.0.1: WebUI 不可用时显示 CLI 状态信息（参考 BG 的 action.sh）
@@ -37,7 +37,7 @@ is_foreground_pkg() {
 # === CLI 状态显示（WebUI 不可用时的回退） ===
 show_cli_status() {
     echo "========================================="
-    echo "   RescueX v3.4.0-r1-beta - 模块状态"
+    echo "   RescueX v3.4.0 - 模块状态"
     echo "========================================="
     echo ""
 

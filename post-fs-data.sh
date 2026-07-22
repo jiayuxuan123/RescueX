@@ -1,11 +1,10 @@
 #!/system/bin/sh
-# RescueX v3.4.0-r1-beta - post-fs-data.sh
+# RescueX v3.4.0 - post-fs-data.sh
 # 在系统启动早期执行，负责救砖逻辑核心
 #
 # v3.0.1 改进（专业级升级）：
 # - 三级渐进式救砖：嫌疑禁用→全量+脚本锁定→APP解冻
 # - 嫌疑模块精准追踪（基于 last-good 列表对比）
-# - 脚本目录自动锁定（全量救砖时同时禁用 service.d 等）
 # - APP 自动解冻（删除 package-restrictions.xml）
 
 MODDIR="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -188,9 +187,6 @@ log "===== RescueX $RX_VERSION post-fs-data 启动 ====="
 log "配置: 阈值=$REBOOT_THRESHOLD 超时=$BOOT_TIMEOUT_SEC OTA超时=$OTA_TIMEOUT_SEC 渐进=$PROGRESSIVE_RESCUE dry=$DRY_RUN 宽限=$USER_REBOOT_GRACE_SEC"
 
 # 尽早执行脚本拦截。disable 标记负责后续启动，函数同时结束当前已运行的入口脚本。
-RISK_HITS=$(scan_and_block_destructive_scripts 2>/dev/null)
-case "$RISK_HITS" in ''|*[!0-9]*) RISK_HITS=0 ;; esac
-[ "$RISK_HITS" -gt 0 ] && log "已拦截 $RISK_HITS 个高风险脚本入口"
 
 # v2.5 新增：启动模式检测
 # Recovery / Fastbootd / Charger 等非正常启动模式不应被计入失败
