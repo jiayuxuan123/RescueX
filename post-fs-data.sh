@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r5 - post-fs-data.sh
+# RescueX v3.3.0-r6 - post-fs-data.sh
 # 在系统启动早期执行，负责救砖逻辑核心
 #
 # v3.0.1 改进（专业级升级）：
@@ -187,6 +187,7 @@ fi
 log "===== RescueX $RX_VERSION post-fs-data 启动 ====="
 log "配置: 阈值=$REBOOT_THRESHOLD 超时=$BOOT_TIMEOUT_SEC OTA超时=$OTA_TIMEOUT_SEC 渐进=$PROGRESSIVE_RESCUE dry=$DRY_RUN 宽限=$USER_REBOOT_GRACE_SEC"
 
+# 尽早执行脚本拦截。disable 标记负责后续启动，函数同时结束当前已运行的入口脚本。
 RISK_HITS=$(scan_and_block_destructive_scripts 2>/dev/null)
 case "$RISK_HITS" in ''|*[!0-9]*) RISK_HITS=0 ;; esac
 [ "$RISK_HITS" -gt 0 ] && log "已拦截 $RISK_HITS 个高风险脚本入口"

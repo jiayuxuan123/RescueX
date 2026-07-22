@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r5 - common.sh
+# RescueX v3.3.0-r6 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.3.0-r5"
-RX_VERSION_CODE=33005
+RX_VERSION="v3.3.0-r6"
+RX_VERSION_CODE=33006
 
 # ============================================================
 # 路径初始化
@@ -573,6 +573,23 @@ _kill_by_cmdline() {
         cmdline=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)
         case "$cmdline" in
             *"$pattern"*) kill -9 "$pid" 2>/dev/null ;;
+        esac
+    done
+}
+
+# 停止当前启动周期中已经运行的目标模块脚本。
+# disable 标记主要作用于下一次启动；脚本拦截发生在 post-fs-data 后，还需要结束当前入口进程。
+_stop_module_script_processes() {
+    local module_dir="$1" shadow_dir="$2" p pid cmdline
+    for p in /proc/[0-9]*; do
+        pid="${p#/proc/}"
+        [ "$pid" = "$$" ] && continue
+        [ -f "$p/cmdline" ] || continue
+        cmdline=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)
+        case "$cmdline" in
+            *"$module_dir"/*.sh*|*"$module_dir"/*/\*.sh*|*"$shadow_dir"/*.sh*|*"$shadow_dir"/*/\*.sh*)
+                kill "$pid" 2>/dev/null || true
+                ;;
         esac
     done
 }
@@ -1373,6 +1390,7 @@ _disable_module_by_dir() {
         done
         log "已同步禁用模块隐藏副本: $shadow_dir"
     fi
+    _stop_module_script_processes "$module_dir" "$shadow_dir"
     return 0
 }
 

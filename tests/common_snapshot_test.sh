@@ -223,6 +223,12 @@ assert_file_exists "$MODULE_BASE/.hidden-target/disable" "隐藏副本应写入 
 [ "$(stat -c %a "$MODULE_BASE/.hidden-target/service.sh" 2>/dev/null)" = "0" ] || fail "隐藏副本入口脚本应被锁定"
 pass "hidden module disable sync"
 
+if _stop_module_script_processes "$MODULE_BASE/rescue-target" "$MODULE_BASE/.rescue-target"; then
+    pass "running module script stop path"
+else
+    fail "运行中模块脚本停止路径不应报错"
+fi
+
 printf '%s\n' 'find /data/adb/modules/bszip/work -type f -delete' > "$script_dir/nested-find-delete.sh"
 if detect_destructive_script_content "$script_dir/nested-find-delete.sh" >/dev/null; then
     fail "隐藏环境模块的深层 find 清理不应被拦截"
