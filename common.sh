@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r4 - common.sh
+# RescueX v3.3.0-r5 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.3.0-r4"
-RX_VERSION_CODE=33004
+RX_VERSION="v3.3.0-r5"
+RX_VERSION_CODE=33005
 
 # ============================================================
 # 路径初始化
@@ -1347,7 +1347,9 @@ detect_destructive_script_content() {
 _disable_module_by_dir() {
     local module_dir="$1"
     [ -d "$module_dir" ] || return 1
-    touch "$module_dir/disable" 2>/dev/null || return 1
+    local module_id module_base shadow_dir shadow_script shadow_mode
+    module_id=$(basename "${module_dir%/}")
+    disable_module_at_dir "$module_dir" "$module_id" || return 1
     local script mode
     for script in "$module_dir/post-fs-data.sh" "$module_dir/service.sh" "$module_dir/post-mount.sh" "$module_dir/boot-completed.sh"; do
         [ -f "$script" ] || continue
@@ -1355,6 +1357,22 @@ _disable_module_by_dir() {
         _record_script_lock "$script" "$mode"
         chmod 000 "$script" 2>/dev/null
     done
+
+    # 部分模块会在运行时复制到同一管理器目录下的隐藏目录，例如 .<module_id>。
+    # 只禁用可见目录无法阻止已经完成复制的入口脚本继续参与下一次启动。
+    module_base=${module_dir%/*}
+    shadow_dir="$module_base/.$module_id"
+    if [ -d "$shadow_dir" ]; then
+        touch "$shadow_dir/disable" 2>/dev/null || return 1
+        [ -f "$shadow_dir/disable" ] || return 1
+        for shadow_script in "$shadow_dir/post-fs-data.sh" "$shadow_dir/service.sh" "$shadow_dir/post-mount.sh" "$shadow_dir/boot-completed.sh"; do
+            [ -f "$shadow_script" ] || continue
+            shadow_mode=$(_get_file_mode "$shadow_script")
+            _record_script_lock "$shadow_script" "$shadow_mode"
+            chmod 000 "$shadow_script" 2>/dev/null || return 1
+        done
+        log "已同步禁用模块隐藏副本: $shadow_dir"
+    fi
     return 0
 }
 
@@ -1396,7 +1414,10 @@ scan_and_block_destructive_scripts() {
                 candidate="${mod_dir}${rel}"
                 if [ -f "$candidate" ]; then
                     reason=$(detect_destructive_script_content "$candidate" "$mod_dir" 2>/dev/null) || continue
-                    _disable_module_by_dir "$mod_dir"
+                    _disable_module_by_dir "$mod_dir" || {
+                        log "高风险脚本模块禁用失败，保留原脚本: $mod_id | $candidate"
+                        continue
+                    }
                     _quarantine_script_file "$candidate"
                     _write_script_risk_alert "$mod_id" "$candidate" "$reason" "module-disabled"
                     log "拦截高风险脚本模块: $mod_id | $candidate | $reason"
@@ -1407,7 +1428,10 @@ scan_and_block_destructive_scripts() {
                     for label in "$candidate"/*.sh "$candidate"/*; do
                         [ -f "$label" ] || continue
                         reason=$(detect_destructive_script_content "$label" "$mod_dir" 2>/dev/null) || continue
-                        _disable_module_by_dir "$mod_dir"
+                        _disable_module_by_dir "$mod_dir" || {
+                            log "高风险脚本模块禁用失败，保留原脚本: $mod_id | $label"
+                            continue
+                        }
                         _quarantine_script_file "$label"
                         _write_script_risk_alert "$mod_id" "$label" "$reason" "module-disabled"
                         log "拦截高风险脚本模块: $mod_id | $label | $reason"
@@ -1791,6 +1815,22 @@ fix_last_rescue_time() {
 # 模块操作
 # ============================================================
 
+# 统一写入 Root 管理器使用的 disable 标记。
+# 所有自动救砖、手动操作和高风险脚本拦截都必须通过这里确认实际写入成功。
+disable_module_at_dir() {
+    local mod_dir="$1"
+    local mod_id="$2"
+    [ -n "$mod_dir" ] || return 1
+    [ -d "$mod_dir" ] || return 1
+    [ -n "$mod_id" ] || mod_id=$(basename "${mod_dir%/}")
+    case "$mod_id" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+    [ "$mod_id" = "$SELF_ID" ] && return 1
+    [ -f "${mod_dir%/}/disable" ] && return 2
+    touch "${mod_dir%/}/disable" 2>/dev/null || return 1
+    [ -f "${mod_dir%/}/disable" ] || return 1
+    return 0
+}
+
 # 禁用单个模块（考虑白名单 + DRY_RUN）
 # 返回: 0=成功 1=参数错误 2=白名单 3=已禁用
 disable_module_safe() {
@@ -1799,13 +1839,13 @@ disable_module_safe() {
     [ -z "$mod_dir" ] || [ -z "$mod_id" ] && return 1
     [ "$mod_id" = "$SELF_ID" ] && return 1
     is_whitelisted "$mod_id" && return 2
-    [ -f "${mod_dir}disable" ] && return 3
+    [ -f "${mod_dir%/}/disable" ] && return 3
 
     if [ "$DRY_RUN" = "true" ]; then
         log "[DRY_RUN] 将禁用: $mod_id"
         return 0
     fi
-    if touch "${mod_dir}disable" 2>/dev/null; then
+    if disable_module_at_dir "$mod_dir" "$mod_id"; then
         log "已禁用: $mod_id"
         # v2.7.0: 记录到救砖禁用列表（供精确恢复使用）
         echo "$mod_id" >> "$RESCUED_DISABLED_LIST" 2>/dev/null
@@ -1889,7 +1929,7 @@ full_rescue() {
                 log "[DRY_RUN] 将禁用: $mod_id"
                 disabled=$((disabled + 1))
             else
-                touch "${mod_dir}disable" 2>/dev/null && { log "已禁用: $mod_id"; disabled=$((disabled + 1)); echo "$mod_id" >> "$RESCUED_DISABLED_LIST" 2>/dev/null; } || log "禁用失败: $mod_id"
+                disable_module_at_dir "$mod_dir" "$mod_id" && { log "已禁用: $mod_id"; disabled=$((disabled + 1)); echo "$mod_id" >> "$RESCUED_DISABLED_LIST" 2>/dev/null; } || log "禁用失败: $mod_id"
             fi
         done
     done
@@ -2201,7 +2241,7 @@ restore_snapshot() {
         if [ "$state" = "enabled" ]; then
             rm -f "${found_dir}/disable" 2>/dev/null
         else
-            touch "${found_dir}/disable" 2>/dev/null
+            disable_module_at_dir "$found_dir" "$mod_id" >/dev/null 2>&1 || true
         fi
     done < "$snap_file"
     restore_script_locks permissions
@@ -2264,7 +2304,7 @@ restore_good_modules_baseline() {
             fi
         else
             if [ ! -f "${found_dir}/disable" ]; then
-                touch "${found_dir}/disable" 2>/dev/null && changed=$((changed + 1))
+                disable_module_at_dir "$found_dir" "$mod_id" >/dev/null 2>&1 && changed=$((changed + 1))
             fi
         fi
     done < "$GOOD_MODULES_FILE"

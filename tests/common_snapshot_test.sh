@@ -207,6 +207,22 @@ reason=$(detect_destructive_script_content "$script_dir/mixed-module-cleanup.sh"
 assert_eq "rm-rf-sensitive-path" "$reason" "混合清理中的其他模块目录应继续拦截"
 pass "self module cleanup allowed"
 
+module_dir rescue-target
+disable_module_at_dir "$MODULE_BASE/rescue-target" rescue-target || fail "统一禁用函数应写入 disable 标记"
+assert_file_exists "$MODULE_BASE/rescue-target/disable" "统一禁用函数应确认 disable 标记存在"
+if _disable_module_by_dir "$MODULE_BASE/rescue-target"; then
+    fail "重复禁用应返回失败"
+fi
+pass "unified module disable marker"
+
+module_dir hidden-target
+mkdir -p "$MODULE_BASE/.hidden-target"
+printf '%s\n' '#!/system/bin/sh' > "$MODULE_BASE/.hidden-target/service.sh"
+_disable_module_by_dir "$MODULE_BASE/hidden-target" || fail "禁用模块时应同步处理隐藏副本"
+assert_file_exists "$MODULE_BASE/.hidden-target/disable" "隐藏副本应写入 disable 标记"
+[ "$(stat -c %a "$MODULE_BASE/.hidden-target/service.sh" 2>/dev/null)" = "0" ] || fail "隐藏副本入口脚本应被锁定"
+pass "hidden module disable sync"
+
 printf '%s\n' 'find /data/adb/modules/bszip/work -type f -delete' > "$script_dir/nested-find-delete.sh"
 if detect_destructive_script_content "$script_dir/nested-find-delete.sh" >/dev/null; then
     fail "隐藏环境模块的深层 find 清理不应被拦截"
