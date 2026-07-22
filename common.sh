@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.3.0-r3 - common.sh
+# RescueX v3.3.0-r4 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -15,8 +15,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.3.0-r3"
-RX_VERSION_CODE=33003
+RX_VERSION="v3.3.0-r4"
+RX_VERSION_CODE=33004
 
 # ============================================================
 # 路径初始化
@@ -1302,6 +1302,23 @@ detect_destructive_script_content() {
     local content
     content=$(grep -Eiv '^[[:space:]]*#' "$target" 2>/dev/null)
 
+    # 模块自身的升级/卸载流程可能会清理自己的安装目录或隐藏目录。
+    # 传入当前模块目录后，将这两个自有路径从风险扫描中排除，继续检查同一行中的其他敏感路径。
+    local allowed_module_dir="${2:-}" allowed_module_id escaped_module_id
+    if [ -n "$allowed_module_dir" ]; then
+        allowed_module_dir=${allowed_module_dir%/}
+        allowed_module_id=${allowed_module_dir##*/}
+        case "$allowed_module_id" in
+            ''|*[!A-Za-z0-9._-]*) allowed_module_id='' ;;
+        esac
+        if [ -n "$allowed_module_id" ]; then
+            escaped_module_id=$(printf '%s' "$allowed_module_id" | sed 's/[.[\*^$\\]/\\&/g')
+            content=$(printf '%s\n' "$content" | sed \
+                -e "s#/data/adb/modules/${escaped_module_id}#MODULE_SELF#g" \
+                -e "s#/data/adb/modules/\\.${escaped_module_id}#MODULE_SELF#g")
+        fi
+    fi
+
     printf '%s\n' "$content" | grep -Eiq '(^|[;&|[:space:]])rm[[:space:]]+-[[:alnum:]]*r[[:alnum:]]*f([[:space:]]+|[[:space:]]+--[[:space:]]+).*(/data([[:space:]]|$)|/data/(data|user|system|misc|property|vendor|media|app|dalvik-cache|cache|metadata|persist)(/|[[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)([[:space:]]|$)|/data/adb/(modules|ksu/modules|ap/modules|ap_modules)/[^/[:space:]]+/?([[:space:]]|$)|/sdcard([/[:space:]]|$)|/storage(/emulated)?(/|[[:space:]]|$))' && {
         echo 'rm-rf-sensitive-path'
         return 0
@@ -1378,7 +1395,7 @@ scan_and_block_destructive_scripts() {
             for rel in post-fs-data.sh service.sh post-mount.sh boot-completed.sh service.d post-fs-data.d post-mount.d boot-completed.d; do
                 candidate="${mod_dir}${rel}"
                 if [ -f "$candidate" ]; then
-                    reason=$(detect_destructive_script_content "$candidate" 2>/dev/null) || continue
+                    reason=$(detect_destructive_script_content "$candidate" "$mod_dir" 2>/dev/null) || continue
                     _disable_module_by_dir "$mod_dir"
                     _quarantine_script_file "$candidate"
                     _write_script_risk_alert "$mod_id" "$candidate" "$reason" "module-disabled"
@@ -1389,7 +1406,7 @@ scan_and_block_destructive_scripts() {
                 elif [ -d "$candidate" ]; then
                     for label in "$candidate"/*.sh "$candidate"/*; do
                         [ -f "$label" ] || continue
-                        reason=$(detect_destructive_script_content "$label" 2>/dev/null) || continue
+                        reason=$(detect_destructive_script_content "$label" "$mod_dir" 2>/dev/null) || continue
                         _disable_module_by_dir "$mod_dir"
                         _quarantine_script_file "$label"
                         _write_script_risk_alert "$mod_id" "$label" "$reason" "module-disabled"

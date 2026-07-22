@@ -192,6 +192,21 @@ reason=$(detect_destructive_script_content "$script_dir/module-root-delete.sh")
 assert_eq "rm-rf-sensitive-path" "$reason" "模块根目录删除应继续拦截"
 pass "module root deletion blocked"
 
+printf '%s\n' 'rm -rf /data/adb/modules/TA_utl' > "$script_dir/self-module-cleanup.sh"
+if detect_destructive_script_content "$script_dir/self-module-cleanup.sh" /data/adb/modules/TA_utl >/dev/null; then
+    fail "模块自身目录清理不应被误报"
+fi
+
+printf '%s\n' 'rm -rf /data/adb/modules/.TA_utl' > "$script_dir/self-hidden-module-cleanup.sh"
+if detect_destructive_script_content "$script_dir/self-hidden-module-cleanup.sh" /data/adb/modules/TA_utl >/dev/null; then
+    fail "模块自身隐藏目录清理不应被误报"
+fi
+
+printf '%s\n' 'rm -rf /data/adb/modules/other-module /data/adb/modules/TA_utl' > "$script_dir/mixed-module-cleanup.sh"
+reason=$(detect_destructive_script_content "$script_dir/mixed-module-cleanup.sh" /data/adb/modules/TA_utl)
+assert_eq "rm-rf-sensitive-path" "$reason" "混合清理中的其他模块目录应继续拦截"
+pass "self module cleanup allowed"
+
 printf '%s\n' 'find /data/adb/modules/bszip/work -type f -delete' > "$script_dir/nested-find-delete.sh"
 if detect_destructive_script_content "$script_dir/nested-find-delete.sh" >/dev/null; then
     fail "隐藏环境模块的深层 find 清理不应被拦截"
