@@ -612,6 +612,8 @@ class RescueXUI {
         this._easterTapTimer = null;
         this._easterLangHits = [];
         this._easterSubtitleTimer = null;
+        this._refreshInFlight = false;
+        this._refreshSequence = 0;
 
         this.init();
     }
@@ -644,6 +646,7 @@ class RescueXUI {
 
         // 应用初始语言
         this.applyLang(this.lang);
+        this.setupWorkspaceShell();
 
         // 事件委托
         document.body.addEventListener('click', (e) => {
@@ -950,6 +953,82 @@ done`;
                 resolve('');
             }
         });
+    }
+
+    setupWorkspaceShell() {
+        const root = this.qs('.container');
+        const menuButton = this.qs('.workspace-menu-btn');
+        const hero = this.qs('.status-hero');
+        if (!root || !hero || document.querySelector('.workspace-tabs')) return;
+
+        // A rescue tool is not a chat: show one task area at a time.
+        const groups = {
+            overview: ['.status-hero + .card', '.status-hero + .card + .card', '.status-hero + .card + .card + .card'],
+            settings: ['[data-action="saveConfig"]', '#integrity-daemon', '[data-action="addCustomDir"]'],
+            recovery: ['[data-action="saveGoodModules"]', '[data-action="refreshModules"]', '#snapshot-list'],
+            tools: ['[data-action="checkUpdate"]', '#audit-log-content', '[data-action="disableAllModules"]', '#rescue-log', '#app-version']
+        };
+        const resolveCard = selector => {
+            const node = this.qs(selector);
+            return node?.classList?.contains('card') ? node : node?.closest('.card');
+        };
+        const assigned = new Map();
+        Object.entries(groups).forEach(([group, selectors]) => selectors.forEach(selector => {
+            const card = resolveCard(selector);
+            if (card) assigned.set(card, group);
+        }));
+        root.querySelectorAll('.card').forEach(card => {
+            const group = assigned.get(card) || 'tools';
+            card.dataset.workspaceGroup = group;
+        });
+
+        const tabs = document.createElement('nav');
+        tabs.className = 'workspace-tabs';
+        tabs.setAttribute('aria-label', 'RescueX 功能导航');
+        tabs.innerHTML = `<button type="button" data-workspace-view="overview" class="active">概览</button><button type="button" data-workspace-view="settings">保护设置</button><button type="button" data-workspace-view="recovery">模块恢复</button><button type="button" data-workspace-view="tools">工具与日志</button>`;
+        hero.insertAdjacentElement('afterend', tabs);
+        const homeActions = document.createElement('div');
+        homeActions.className = 'workspace-home-actions';
+        homeActions.innerHTML = `<button type="button" data-workspace-command="refresh">刷新状态</button><button type="button" data-workspace-command="check">运行完整性检查</button><button type="button" data-workspace-command="settings">保护设置</button>`;
+        tabs.insertAdjacentElement('afterend', homeActions);
+
+        const setView = view => {
+            root.dataset.workspaceView = view;
+            hero.classList.toggle('workspace-hidden', view !== 'overview');
+            tabs.querySelectorAll('button').forEach(button => button.classList.toggle('active', button.dataset.workspaceView === view));
+            root.querySelectorAll('.card[data-workspace-group]').forEach(card => card.classList.toggle('workspace-hidden', card.dataset.workspaceGroup !== view));
+            window.scrollTo({ top: 0, behavior: 'auto' });
+        };
+        tabs.addEventListener('click', event => {
+            const view = event.target.closest('[data-workspace-view]')?.dataset.workspaceView;
+            if (view) setView(view);
+        });
+        homeActions.addEventListener('click', event => {
+            const command = event.target.closest('[data-workspace-command]')?.dataset.workspaceCommand;
+            if (command === 'refresh') this.refreshWorkspace();
+            if (command === 'check') this.runIntegrityCheck();
+            if (command === 'settings') setView('settings');
+        });
+        if (menuButton) {
+            menuButton.textContent = '↻';
+            menuButton.title = '刷新状态';
+            menuButton.setAttribute('aria-label', '刷新状态');
+            menuButton.addEventListener('click', () => this.refreshWorkspace());
+        }
+        setView('overview');
+    }
+
+    async refreshWorkspace() {
+        if (this._refreshInFlight) return;
+        this._refreshInFlight = true;
+        try {
+            await this.loadAll();
+            this.toast(this.lang === 'zh' ? '状态已更新' : 'Status updated', 'success');
+        } catch (error) {
+            this.toast(this.lang === 'zh' ? '状态刷新失败，请重试' : 'Status refresh failed. Try again.', 'error');
+        } finally {
+            this._refreshInFlight = false;
+        }
     }
 
     qs(s) { return document.querySelector(s); }

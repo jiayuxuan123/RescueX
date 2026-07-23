@@ -1,0 +1,32 @@
+/* v3.4.1 UI revision: plain rescue-tool navigation, not chat UI */
+body { padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+.workspace-nav, .workspace-nav-backdrop, .workspace-action-bar { display: none !important; }
+.workspace-tabs { display: grid; grid-template-columns: 1fr 1.2fr 1.2fr 1.15fr; gap: 4px; margin: 12px 0; padding: 4px; border: 1px solid var(--rx-border); border-radius: 8px; background: var(--rx-surface); }
+.workspace-tabs button { min-height: 38px; padding: 6px 4px; border: 0; border-radius: 5px; background: transparent; color: var(--rx-muted); font: inherit; font-size: 12px; font-weight: 650; line-height: 1.15; }
+.workspace-tabs button.active { background: #fff; color: var(--rx-ink); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.workspace-home-actions { display: grid; grid-template-columns: 1fr; gap: 8px; margin: 0 0 14px; }
+.workspace-home-actions button { min-height: 48px; padding: 0 14px; border: 1px solid var(--rx-border); border-radius: 7px; background: #fff; color: var(--rx-ink); text-align: left; font: inherit; font-size: 15px; font-weight: 650; }
+.workspace-home-actions button::after { float: right; color: var(--rx-muted); content: '›'; font-size: 22px; line-height: 18px; }
+.workspace-home-actions button:nth-child(2) { border-color: var(--rx-ink); background: var(--rx-ink); color: #fff; }
+.workspace-home-actions button:nth-child(2)::after { color: #fff; }
+.container[data-workspace-view="overview"] .workspace-home-actions { display: grid; }
+.container:not([data-workspace-view="overview"]) .workspace-home-actions { display: none; }
+.workspace-hidden { display: none !important; }
+.card[data-workspace-group] { margin-top: 12px; }
+.container[data-workspace-view="settings"] .card[data-workspace-group="settings"]:first-of-type,
+.container[data-workspace-view="recovery"] .card[data-workspace-group="recovery"]:first-of-type,
+.container[data-workspace-view="tools"] .card[data-workspace-group="tools"]:first-of-type { margin-top: 4px; }
+.status-hero { padding: 20px; border-left-width: 5px; }
+.status-value { font-size: 28px; }
+.card-header h2 { font-size: 16px; }
+.card-header .icon { display: none; }
+.section-actions .btn { flex-basis: 100%; }
+@media (min-width: 540px) {
+  .workspace-tabs { grid-template-columns: repeat(4, 1fr); }
+  .workspace-home-actions { grid-template-columns: repeat(3, 1fr); }
+  .workspace-home-actions button { text-align: center; }
+  .workspace-home-actions button::after { display: none; }
+}
+@media (max-width: 370px) {
+  .workspace-tabs button { font-size: 11px; }
+}
