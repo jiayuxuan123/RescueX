@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.4.0"
-RX_VERSION_CODE=34000
+RX_VERSION="v3.4.3"
+RX_VERSION_CODE=34030
 
 # ============================================================
 # 路径初始化
@@ -497,7 +497,8 @@ start_integrity_daemon() {
     read_config
     [ "$INTEGRITY_CHECK_ENABLED" = "true" ] || return 0
     integrity_pid_is_alive && return 0
-    [ -x "$INTEGRITY_SCRIPT" ] || return 1
+    # 通过 sh 启动，不依赖 ZIP 解包后的可执行位；只要求脚本可读。
+    [ -r "$INTEGRITY_SCRIPT" ] || return 1
     mkdir "$STATE_DIR/.integrity_start.lock" 2>/dev/null || return 0
     integrity_pid_is_alive && { rmdir "$STATE_DIR/.integrity_start.lock" 2>/dev/null; return 0; }
     sh "$INTEGRITY_SCRIPT" >/dev/null 2>&1 < /dev/null &
@@ -2236,26 +2237,21 @@ detect_boot_mode() {
 # 输出：禁用状态字符串
 # ============================================================
 detect_lsposed_state() {
-    # LSPosed 状态文件路径（多版本兼容）
-    # v2.6.0 F-BUG-6 修复：注释与代码路径完全对齐
-    #   - 旧版 LSPosed（< v1.3.0）：禁用标记可能落在以下两个路径之一
-    #       /data/adb/lsposed/disable_config         （目录或文件）
-    #       /data/adb/lsposed/disable_config/db      （db 子文件）
-    #   - 新版 LSPosed（>= v1.3.0 / LSPosed-core 重构后）：
-    #       /data/adb/lspd/disable                   （单文件标记）
-    # 同时检查父路径与 db 子文件，任一存在即判定为 legacy 禁用状态
-    if [ -e "/data/adb/lsposed/disable_config" ] || [ -e "/data/adb/lsposed/disable_config/db" ]; then
+    # 默认检查 Android 真实路径；测试可通过 LSPOSED_BASE_DIR 注入隔离目录。
+    local lsposed_base
+    lsposed_base="${LSPOSED_BASE_DIR:-/data/adb}"
+    # 旧版 LSPosed：disable_config（目录/文件）或其 db 子文件。
+    # 新版 LSPosed：lspd/disable 单文件标记。
+    if [ -e "$lsposed_base/lsposed/disable_config" ] || [ -e "$lsposed_base/lsposed/disable_config/db" ]; then
         echo "disabled (legacy)"
         return
     fi
-    if [ -f "/data/adb/lspd/disable" ]; then
+    if [ -f "$lsposed_base/lspd/disable" ]; then
         echo "disabled"
         return
     fi
-    if [ -d "/data/adb/lspd" ] || [ -d "/data/adb/lsposed" ]; then
-        # 目录存在但无 disable 标记
-        # 进一步检查 LSPosed manager 的状态
-        if [ -f "/data/adb/lspd/config/manager.json" ]; then
+    if [ -d "$lsposed_base/lspd" ] || [ -d "$lsposed_base/lsposed" ]; then
+        if [ -f "$lsposed_base/lspd/config/manager.json" ]; then
             echo "enabled"
             return
         fi
@@ -3102,13 +3098,30 @@ is_safe_custom_dir() {
     return 1
 }
 
-# 已存在基线发生版本差异时只能告警；不能自动把新基线当作可信基线。
+# 基线绑定模块 versionCode。正常模块更新会替换核心脚本，因此旧版哈希不再可信；
+# 更新后应在本模块目录的当前文件上建立新基线，而非把版本变化误报为文件被篡改。
+# 真正的篡改仍由同版本下的哈希比对报告为 COMPROMISED。
 integrity_check_once() {
-    local v mv
-    v=$(grep '^versionCode=' "$MODDIR/module.prop" 2>/dev/null | cut -d= -f2)
-    mv=$(grep '^#VERSION=' "$INTEGRITY_MANIFEST_FILE" 2>/dev/null | cut -d= -f2)
-    if [ ! -f "$INTEGRITY_MANIFEST_FILE" ]; then integrity_build_manifest || return 1; integrity_write_status BASELINE_CREATED "首次安装建立基线"; return 0; fi
-    if [ "$v" != "$mv" ]; then integrity_write_status REVIEW_REQUIRED "版本与既有基线不匹配，禁止自动重建"; return 1; fi
+    local version manifest_version
+    version=$(grep '^versionCode=' "$MODDIR/module.prop" 2>/dev/null | cut -d= -f2)
+    case "$version" in ''|*[!0-9]*) version=0 ;; esac
+
+    if [ ! -f "$INTEGRITY_MANIFEST_FILE" ]; then
+        integrity_build_manifest || { integrity_write_status ERROR "无法建立完整性基线"; return 1; }
+        integrity_write_status BASELINE_CREATED "首次安装建立基线"
+        return 0
+    fi
+
+    manifest_version=$(grep '^#VERSION=' "$INTEGRITY_MANIFEST_FILE" 2>/dev/null | cut -d= -f2)
+    case "$manifest_version" in ''|*[!0-9]*) manifest_version=-1 ;; esac
+    if [ "$manifest_version" != "$version" ]; then
+        integrity_build_manifest || { integrity_write_status ERROR "模块更新后无法重建完整性基线"; return 1; }
+        integrity_write_status BASELINE_CREATED "模块已更新，已按当前版本重建基线"
+        log "[INTEGRITY] 版本 ${manifest_version} -> ${version}，已建立新基线"
+        sync_to_persist
+        return 0
+    fi
+
     _integrity_check_once_legacy
 }
 

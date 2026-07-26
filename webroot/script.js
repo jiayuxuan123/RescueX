@@ -1,4 +1,4 @@
-/* RescueX v3.4.1 - WebUI 控制器
+/* RescueX v3.4.3 - WebUI 控制器
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -12,8 +12,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.4.1';
-const APP_VERSION_CODE = 34010;
+const APP_VERSION = 'v3.4.3';
+const APP_VERSION_CODE = 34030;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -38,6 +38,22 @@ function utf8ToBase64(str) {
 const I18N = {
     zh: {
         current_status: '当前状态',
+        workspace_overview: '概览',
+        workspace_protection: '保护设置',
+        workspace_modules: '模块管理',
+        workspace_settings: '保护设置',
+        workspace_recovery: '救援操作',
+        workspace_logs: '日志与报告',
+        workspace_tools: '工具与日志',
+        module_search_label: '搜索模块',
+        module_search: '搜索模块…',
+        module_filter_all: '全部状态',
+        module_filter_enabled: '已启用',
+        module_filter_disabled: '已禁用',
+        module_selected: '已选择 {n} 个',
+        workspace_refresh: '刷新状态',
+        workspace_check: '运行完整性检查',
+        workspace_nav_label: 'RescueX 功能导航',
         boot_status: '启动状态',
         last_result: '上次启动结果',
         fail_count: '连续失败次数',
@@ -112,7 +128,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.4.1：修复模块自身隐藏目录的误报。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.4.3：修复模块自身隐藏目录的误报。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -319,6 +335,22 @@ const I18N = {
     },
     en: {
         current_status: 'Current Status',
+        workspace_overview: 'Overview',
+        workspace_protection: 'Protection',
+        workspace_modules: 'Modules',
+        workspace_settings: 'Protection',
+        workspace_recovery: 'Recovery',
+        workspace_logs: 'Logs & reports',
+        workspace_tools: 'Tools & logs',
+        workspace_refresh: 'Refresh status',
+        workspace_check: 'Run integrity check',
+        workspace_nav_label: 'RescueX navigation',
+        module_search_label: 'Search modules',
+        module_search: 'Search modules…',
+        module_filter_all: 'All states',
+        module_filter_enabled: 'Enabled',
+        module_filter_disabled: 'Disabled',
+        module_selected: '{n} selected',
         boot_status: 'Boot Status',
         last_result: 'Last Result',
         fail_count: 'Fail Count',
@@ -393,7 +425,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.4.1: fixes false positives for module self-hidden paths.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.4.3: fixes false positives for module self-hidden paths.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -690,6 +722,14 @@ class RescueXUI {
         if (helpBtn) helpBtn.addEventListener('click', () => this.showFeatures());
 
         this.setupEasterEggs();
+        const moduleSearch = this.qs('#module-search');
+        const moduleFilter = this.qs('#module-filter');
+        const moduleList = this.qs('#module-list');
+        if (moduleSearch) moduleSearch.addEventListener('input', () => this.filterModules());
+        if (moduleFilter) moduleFilter.addEventListener('change', () => this.filterModules());
+        if (moduleList) moduleList.addEventListener('change', event => {
+            if (event.target.matches('.module-checkbox')) this.filterModules();
+        });
 
         await this.resolvePaths();
         await this.loadAll();
@@ -782,7 +822,15 @@ done`;
             const key = el.dataset.i18n;
             el.textContent = this.t(key);
         });
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+            el.placeholder = this.t(el.dataset.i18nPlaceholder);
+        });
+        document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
+            el.setAttribute('aria-label', this.t(el.dataset.i18nAriaLabel));
+        });
         this.setDefaultSubtitle();
+        const refreshButton = this.qs('.workspace-menu-btn');
+        if (refreshButton) { refreshButton.title = this.t('workspace_refresh'); refreshButton.setAttribute('aria-label', this.t('workspace_refresh')); }
     }
 
     async switchLang(lang) {
@@ -827,7 +875,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.4.1' : 'Automatic Boot Rescue v3.4.1';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.4.3' : 'Automatic Boot Rescue v3.4.3';
     }
 
     openExternal(url) {
@@ -959,63 +1007,46 @@ done`;
         const root = this.qs('.container');
         const menuButton = this.qs('.workspace-menu-btn');
         const hero = this.qs('.status-hero');
-        if (!root || !hero || document.querySelector('.workspace-tabs')) return;
+        const tabs = root?.querySelector('.workspace-tabs');
+        const homeActions = root?.querySelector('.workspace-home-actions');
+        if (!root || !hero || !tabs) return;
 
-        // A rescue tool is not a chat: show one task area at a time.
-        const groups = {
-            overview: ['.status-hero + .card', '.status-hero + .card + .card', '.status-hero + .card + .card + .card'],
-            settings: ['[data-action="saveConfig"]', '#integrity-daemon', '[data-action="addCustomDir"]'],
-            recovery: ['[data-action="saveGoodModules"]', '[data-action="refreshModules"]', '#snapshot-list'],
-            tools: ['[data-action="checkUpdate"]', '#audit-log-content', '[data-action="disableAllModules"]', '#rescue-log', '#app-version']
-        };
-        const resolveCard = selector => {
-            const node = this.qs(selector);
-            return node?.classList?.contains('card') ? node : node?.closest('.card');
-        };
-        const assigned = new Map();
-        Object.entries(groups).forEach(([group, selectors]) => selectors.forEach(selector => {
-            const card = resolveCard(selector);
-            if (card) assigned.set(card, group);
-        }));
-        root.querySelectorAll('.card').forEach(card => {
-            const group = assigned.get(card) || 'tools';
-            card.dataset.workspaceGroup = group;
-        });
-
-        const tabs = document.createElement('nav');
-        tabs.className = 'workspace-tabs';
-        tabs.setAttribute('aria-label', 'RescueX 功能导航');
-        tabs.innerHTML = `<button type="button" data-workspace-view="overview" class="active">概览</button><button type="button" data-workspace-view="settings">保护设置</button><button type="button" data-workspace-view="recovery">模块恢复</button><button type="button" data-workspace-view="tools">工具与日志</button>`;
-        hero.insertAdjacentElement('afterend', tabs);
-        const homeActions = document.createElement('div');
-        homeActions.className = 'workspace-home-actions';
-        homeActions.innerHTML = `<button type="button" data-workspace-command="refresh">刷新状态</button><button type="button" data-workspace-command="check">运行完整性检查</button><button type="button" data-workspace-command="settings">保护设置</button>`;
-        tabs.insertAdjacentElement('afterend', homeActions);
-
+        // Group membership is declared in index.html. JS only controls visibility.
         const setView = view => {
-            root.dataset.workspaceView = view;
-            hero.classList.toggle('workspace-hidden', view !== 'overview');
-            tabs.querySelectorAll('button').forEach(button => button.classList.toggle('active', button.dataset.workspaceView === view));
-            root.querySelectorAll('.card[data-workspace-group]').forEach(card => card.classList.toggle('workspace-hidden', card.dataset.workspaceGroup !== view));
+            const validViews = new Set(['overview', 'protection', 'modules', 'recovery', 'logs']);
+            const next = validViews.has(view) ? view : 'overview';
+            root.dataset.workspaceView = next;
+            hero.classList.toggle('workspace-hidden', next !== 'overview');
+            tabs.querySelectorAll('[data-workspace-view]').forEach(button => {
+                const active = button.dataset.workspaceView === next;
+                button.classList.toggle('active', active);
+                button.setAttribute('aria-current', active ? 'page' : 'false');
+            });
+            root.querySelectorAll('.card[data-workspace-group]').forEach(card => {
+                card.classList.toggle('workspace-hidden', card.dataset.workspaceGroup !== next);
+            });
+            if (homeActions) homeActions.hidden = next !== 'overview';
             window.scrollTo({ top: 0, behavior: 'auto' });
         };
-        tabs.addEventListener('click', event => {
-            const view = event.target.closest('[data-workspace-view]')?.dataset.workspaceView;
-            if (view) setView(view);
+        tabs.querySelectorAll('[data-workspace-view]').forEach(button => {
+            button.addEventListener('click', () => setView(button.dataset.workspaceView));
         });
-        homeActions.addEventListener('click', event => {
-            const command = event.target.closest('[data-workspace-command]')?.dataset.workspaceCommand;
-            if (command === 'refresh') this.refreshWorkspace();
-            if (command === 'check') this.runIntegrityCheck();
-            if (command === 'settings') setView('settings');
+        homeActions?.querySelectorAll('[data-workspace-command]').forEach(button => {
+            button.addEventListener('click', () => {
+                const command = button.dataset.workspaceCommand;
+                if (command === 'refresh') this.refreshWorkspace();
+                if (command === 'check') this.runIntegrityCheck();
+                if (command === 'settings') setView('protection');
+            });
         });
         if (menuButton) {
             menuButton.textContent = '↻';
-            menuButton.title = '刷新状态';
-            menuButton.setAttribute('aria-label', '刷新状态');
+            menuButton.title = this.t('workspace_refresh');
+            menuButton.setAttribute('aria-label', this.t('workspace_refresh'));
             menuButton.addEventListener('click', () => this.refreshWorkspace());
         }
-        setView('overview');
+        this._workspaceSetView = setView;
+        setView(root.dataset.workspaceView || 'overview');
     }
 
     async refreshWorkspace() {
@@ -1409,7 +1440,7 @@ get_dashboard_snapshot`;
         badge.textContent = result;
         badge.className = `badge ${classes[result] || 'badge-info'}`;
         this.setText('#integrity-daemon', snapshot.INTEGRITY_DAEMON === 'alive' ? this.t('wd_running') : this.t('wd_idle'));
-        this.setText('#integrity-last-check', snapshot.INTEGRITY_CHECKED_AT || '--');
+        this.setText('#integrity-last-check', this.formatTimeValue(snapshot.INTEGRITY_CHECKED_AT));
         this.setText('#integrity-detail', snapshot.INTEGRITY_DETAIL || '--');
     }
 
@@ -1487,7 +1518,7 @@ done`;
             const tag = m.enabled ? `<span class="module-tag enabled">${this.t('mod_enabled')}</span>` : `<span class="module-tag disabled">${this.t('mod_disabled')}</span>`;
             const mgrTag = `<span class="module-tag manager">${m.manager}</span>`;
             html += `
-                <label class="module-item">
+                <label class="module-item" data-module-id="${this.escapeHtml(m.id)}" data-module-enabled="${ena}" data-module-whitelisted="${wlSet.has(m.id) ? '1' : '0'}">
                     <input type="checkbox" class="module-checkbox" data-mod-id="${this.escapeHtml(m.id)}" ${checked}>
                     <div class="module-info">
                         <div class="name">${this.escapeHtml(m.id)}</div>
@@ -1497,14 +1528,33 @@ done`;
                 </label>`;
         });
         container.innerHTML = html;
+        this.filterModules();
     }
 
     selectAllModules() {
         document.querySelectorAll('.module-checkbox').forEach(cb => cb.checked = true);
+        this.filterModules();
     }
 
     deselectAllModules() {
         document.querySelectorAll('.module-checkbox').forEach(cb => cb.checked = false);
+        this.filterModules();
+    }
+
+    filterModules() {
+        const query = (this.qs('#module-search')?.value || '').trim().toLowerCase();
+        const filter = this.qs('#module-filter')?.value || 'all';
+        let selected = 0;
+        document.querySelectorAll('#module-list .module-item').forEach(row => {
+            const name = (row.dataset.moduleId || row.querySelector('.name')?.textContent || '').toLowerCase();
+            const enabled = row.dataset.moduleEnabled === '1';
+            const matchesQuery = !query || name.includes(query);
+            const matchesFilter = filter === 'all' || (filter === 'enabled' && enabled) || (filter === 'disabled' && !enabled);
+            row.hidden = !(matchesQuery && matchesFilter);
+            if (row.querySelector('.module-checkbox')?.checked) selected += 1;
+        });
+        const count = this.qs('#module-selection-count');
+        if (count) count.textContent = this.t('module_selected').replace('{n}', String(selected));
     }
 
     async refreshModules() {

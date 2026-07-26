@@ -44,11 +44,16 @@ ok 'transaction lock excludes concurrent owner'
 if app_unfreeze; then echo 'app unfreeze unexpectedly succeeded' >&2; exit 1; fi
 [ "${APP_UNFREEZE_LAST_RESULT:-}" = MANUAL_CONFIRM_REQUIRED ] || exit 1
 ok 'app unfreeze is manual-confirmation only'
-# 7: Version mismatch cannot silently rebuild integrity baseline.
-# use an isolated MODDIR copy for manifest test
-IMOD="$TD/imod"; mkdir -p "$IMOD"; cp "$ROOT/module.prop" "$IMOD/module.prop"
-MODDIR="$IMOD"; printf '#VERSION=99999\n' > "$INTEGRITY_MANIFEST_FILE"
-if integrity_check_once; then echo 'mismatched baseline accepted' >&2; exit 1; fi
-grep -q '^RESULT=REVIEW_REQUIRED$' "$INTEGRITY_STATUS_FILE"
-ok 'integrity version mismatch requires review'
+# 7: A normal version upgrade rebuilds the current module baseline; a same-version change still fails.
+IMOD="$TD/imod"; mkdir -p "$IMOD"
+for f in module.prop common.sh watchdog.sh integrity.sh post-fs-data.sh service.sh; do cp "$ROOT/$f" "$IMOD/$f"; done
+MODDIR="$IMOD"
+printf '#VERSION=34020\n' > "$INTEGRITY_MANIFEST_FILE"
+integrity_check_once
+grep -q '^RESULT=BASELINE_CREATED$' "$INTEGRITY_STATUS_FILE"
+ok 'integrity upgrade rebuilds current baseline'
+printf '# changed after baseline\n' >> "$IMOD/service.sh"
+if integrity_check_once; then echo 'same-version tamper accepted' >&2; exit 1; fi
+grep -q '^RESULT=COMPROMISED$' "$INTEGRITY_STATUS_FILE"
+ok 'same-version integrity change is blocked'
 printf 'all %s safety tests passed\n' "$pass"

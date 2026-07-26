@@ -37,7 +37,7 @@ is_foreground_pkg() {
 # === CLI 状态显示（WebUI 不可用时的回退） ===
 show_cli_status() {
     echo "========================================="
-    echo "   RescueX v3.4.0 - 模块状态"
+    echo "   RescueX v3.4.3 - 模块状态"
     echo "========================================="
     echo ""
 

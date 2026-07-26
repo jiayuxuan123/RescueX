@@ -7,7 +7,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.4.0"
+RX_VERSION="v3.4.3"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -182,6 +182,8 @@ PATCH_UPDATE_TIMEOUT_SEC=180
 PATCH_FAIL_THRESHOLD=2
 PATCH_AUTO_ROLLBACK=true
 WATCHDOG_POLL_INTERVAL_SEC=2
+INTEGRITY_CHECK_ENABLED=true
+INTEGRITY_INTERVAL_MIN_SEC=60
 CONF
     ui_print "- 默认配置已写入"
 else
@@ -198,6 +200,12 @@ else
     fi
     if ! grep -q "^WATCHDOG_POLL_INTERVAL_SEC=" "$STATE_DIR/config.conf" 2>/dev/null; then
         echo "WATCHDOG_POLL_INTERVAL_SEC=2" >> "$STATE_DIR/config.conf"
+    fi
+    if ! grep -q "^INTEGRITY_CHECK_ENABLED=" "$STATE_DIR/config.conf" 2>/dev/null; then
+        echo "INTEGRITY_CHECK_ENABLED=true" >> "$STATE_DIR/config.conf"
+    fi
+    if ! grep -q "^INTEGRITY_INTERVAL_MIN_SEC=" "$STATE_DIR/config.conf" 2>/dev/null; then
+        echo "INTEGRITY_INTERVAL_MIN_SEC=60" >> "$STATE_DIR/config.conf"
     fi
     ui_print "- 已补全新增配置项"
 fi
@@ -250,6 +258,15 @@ rm -f "$STATE_DIR/.report.tmp"
 # v2.7.0: 清理残留的救砖禁用列表（升级后可能已无效）
 # 不清理 patch_update_flag 和 patch_fail_count（跨重启保留）
 
+# === 完整性基线迁移 ===
+# 核心脚本会随模块 ZIP 一起更新，旧版本 manifest 的哈希不能用于校验新版本。
+# 仅清掉派生的完整性状态/基线；用户配置、白名单、快照、启动统计均保留。
+if [ "$IS_UPGRADE" = "true" ]; then
+    rm -f "$STATE_DIR/integrity.manifest" "$STATE_DIR/integrity_status" "$STATE_DIR/integrity_pid" 2>/dev/null
+    rm -f "$PERSIST_DIR/integrity.manifest" 2>/dev/null
+    ui_print "- 模块已更新：将在首次启动后建立新的完整性基线"
+fi
+
 # === 首次使用引导标记 ===
 if [ "$IS_UPGRADE" != "true" ]; then
     echo "1" > "$STATE_DIR/first_run"
@@ -287,6 +304,7 @@ set_perm "$MODPATH/common.sh"        0 0 0700
 set_perm "$MODPATH/post-fs-data.sh"  0 0 0700
 set_perm "$MODPATH/service.sh"       0 0 0700
 set_perm "$MODPATH/watchdog.sh"      0 0 0700
+set_perm "$MODPATH/integrity.sh"     0 0 0700
 set_perm "$MODPATH/uninstall.sh"     0 0 0700
 set_perm "$MODPATH/action.sh"        0 0 0700
 set_perm "$MODPATH/customize.sh"     0 0 0700
@@ -300,8 +318,9 @@ set_perm "$MODPATH/webroot"           0 0 0755
 set_perm "$MODPATH/webroot/arm64-v8a" 0 0 0755
 set_perm "$MODPATH/webroot/assets"    0 0 0755
 set_perm "$MODPATH/webroot/index.html" 0 0 0644
-set_perm "$MODPATH/webroot/style.css"  0 0 0644
-set_perm "$MODPATH/webroot/script.js"  0 0 0644
+set_perm "$MODPATH/webroot/style.css"        0 0 0644
+set_perm "$MODPATH/webroot/workspace-v2.css" 0 0 0644
+set_perm "$MODPATH/webroot/script.js"         0 0 0644
 set_perm "$STATE_DIR" 0 0 0700
 set_perm "$SNAPSHOT_DIR" 0 0 0700
 set_perm "$PATCH_BACKUP_DIR" 0 0 0700

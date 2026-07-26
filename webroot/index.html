@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#ffffff">
+    <meta name="theme-color" content="#f7f7f9">
     <title>RescueX 自动救砖</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="workspace-v2.css">
@@ -11,7 +11,7 @@
 <body>
     <div class="loading-bar" id="loading-bar"></div>
 
-    <div class="container">
+    <div class="container" data-workspace-view="overview">
 
         <!-- 顶部应用栏 -->
         <div class="appbar">
@@ -19,7 +19,7 @@
                 <div class="logo-icon">R</div>
                 <div class="brand-text">
                     <div class="title">RescueX</div>
-                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.4.1</div>
+                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.4.3</div>
                 </div>
             </div>
             <div class="appbar-actions">
@@ -41,7 +41,20 @@
 
         
 
-        <div class="card compact-card">
+        <nav class="workspace-tabs" aria-label="RescueX 功能导航">
+            <button type="button" data-workspace-view="overview" class="active" data-i18n="workspace_overview">概览</button>
+            <button type="button" data-workspace-view="protection" data-i18n="workspace_protection">保护设置</button>
+            <button type="button" data-workspace-view="modules" data-i18n="workspace_modules">模块管理</button>
+            <button type="button" data-workspace-view="recovery" data-i18n="workspace_recovery">救援操作</button>
+            <button type="button" data-workspace-view="logs" data-i18n="workspace_logs">日志与报告</button>
+        </nav>
+        <div class="workspace-home-actions" aria-label="RescueX 快速操作">
+            <button type="button" data-workspace-command="refresh" data-i18n="workspace_refresh">刷新状态</button>
+            <button type="button" data-workspace-command="check" data-i18n="workspace_check">运行完整性检查</button>
+            <button type="button" data-workspace-command="settings" data-i18n="workspace_protection">保护设置</button>
+        </div>
+
+        <div class="card compact-card" data-workspace-group="overview">
             <div class="card-header">
                 <h2><span class="icon">◆</span> <span data-i18n="readiness_title">救砖就绪度</span></h2>
                 <span id="readiness-score" class="badge badge-info">--</span>
@@ -70,7 +83,7 @@
         </div>
 
         <!-- 启动状态 -->
-        <div class="card">
+        <div class="card" data-workspace-group="overview">
             <div class="card-header">
                 <h2><span class="icon">●</span> <span data-i18n="boot_status">启动状态</span></h2>
                 <span id="status-badge" class="badge badge-info">加载中</span>
@@ -124,7 +137,7 @@
         </div>
 
         <!-- v2.5: 启动统计面板 -->
-        <div class="card">
+        <div class="card" data-workspace-group="overview">
             <div class="card-header">
                 <h2><span class="icon">▣</span> <span data-i18n="stats_panel">启动统计</span></h2>
                 <button class="btn btn-text btn-sm" data-action="refreshStats" data-i18n="refresh">刷新</button>
@@ -163,7 +176,7 @@
         </div>
 
         <!-- 配置 -->
-        <div class="card">
+        <div class="card" data-workspace-group="protection">
             <div class="card-header">
                 <h2><span class="icon">⚙</span> <span data-i18n="config">救砖参数</span></h2>
                 <label class="switch">
@@ -288,7 +301,7 @@
             </div>
         </div>
 
-        <div class="card">
+        <div class="card" data-workspace-group="protection">
             <div class="card-header">
                 <h2><span class="icon">#</span> <span data-i18n="integrity_title">RescueX 完整性自检</span></h2>
                 <span id="integrity-badge" class="badge badge-info">--</span>
@@ -303,7 +316,7 @@
         </div>
 
         <!-- v2.7.1: 自定义目录权限 -->
-        <div class="card">
+        <div class="card" data-workspace-group="protection">
             <div class="card-header">
                 <h2><span class="icon">&#9881;</span> <span data-i18n="custom_dirs_title">自定义目录权限</span></h2>
             </div>
@@ -320,9 +333,9 @@
         </div>
 
         <!-- v3.0.1: 嫌疑模块追踪面板 -->
-        <div class="card">
+        <div class="card" data-workspace-group="modules">
             <div class="card-header">
-                <h2><span class="icon">🔍</span> <span data-i18n="suspect_panel">嫌疑模块追踪</span></h2>
+                <h2><span class="icon">⌕</span> <span data-i18n="suspect_panel">嫌疑模块追踪</span></h2>
                 <span id="rescue-level-badge" class="badge badge-info">--</span>
             </div>
             <div class="card-body">
@@ -349,12 +362,22 @@
         </div>
 
         <!-- 白名单模块选择器 -->
-        <div class="card">
+        <div class="card" data-workspace-group="modules">
             <div class="card-header">
-                <h2><span class="icon">★</span> <span data-i18n="whitelist">白名单模块</span></h2>
+                <h2><span class="icon">◇</span> <span data-i18n="whitelist">白名单模块</span></h2>
             </div>
             <div class="card-body">
                 <p class="desc-text" data-i18n="whitelist_desc">救砖时不会被禁用的模块。勾选要保留的模块，保存即可。</p>
+                <div class="module-toolbar" role="search">
+                    <label class="sr-only" for="module-search" data-i18n="module_search_label">搜索模块</label>
+                    <input id="module-search" type="search" data-i18n-placeholder="module_search" placeholder="搜索模块…" autocomplete="off">
+                    <select id="module-filter" aria-label="模块状态筛选">
+                        <option value="all" data-i18n="module_filter_all">全部状态</option>
+                        <option value="enabled" data-i18n="module_filter_enabled">已启用</option>
+                        <option value="disabled" data-i18n="module_filter_disabled">已禁用</option>
+                    </select>
+                    <span id="module-selection-count" class="module-selection-count" aria-live="polite">已选择 0 个</span>
+                </div>
                 <div class="module-list" id="module-list">
                     <div class="empty-state" data-i18n="loading">加载中...</div>
                 </div>
@@ -366,7 +389,7 @@
         </div>
 
         <!-- 模块状态 -->
-        <div class="card">
+        <div class="card" data-workspace-group="modules">
             <div class="card-header">
                 <h2><span class="icon">⊞</span> <span data-i18n="module_status">模块状态</span></h2>
             </div>
@@ -379,7 +402,7 @@
         </div>
 
         <!-- 快照管理 -->
-        <div class="card">
+        <div class="card" data-workspace-group="recovery">
             <div class="card-header">
                 <h2><span class="icon">⏱</span> <span data-i18n="snapshots">快照管理</span></h2>
             </div>
@@ -395,13 +418,13 @@
             </div>
         </div>
 
-        <div class="card compact-card">
+        <div class="card compact-card" data-workspace-group="recovery">
             <div class="card-header">
                 <h2><span class="icon">↗</span> <span data-i18n="update_notice">更新公告</span></h2>
             </div>
             <div class="card-body">
                 <div class="notice-block">
-                        <div class="notice-kicker text-mono">v3.4.1</div>
+                        <div class="notice-kicker text-mono">v3.4.3</div>
                     <div class="notice-title" data-i18n="update_notice_title">完整性自检与脚本误报修复</div>
                     <p class="desc-text" data-i18n="update_notice_desc">新增轻量完整性自检，修复模块清理自身 /data 工作目录时被误判为擦除分区的问题。</p>
                     <div class="section-actions">
@@ -414,9 +437,9 @@
         </div>
 
         <!-- v2.7.0: 救砖审计 -->
-        <div class="card">
+        <div class="card" data-workspace-group="logs">
             <div class="card-header">
-                <h2><span class="icon">📋</span> <span data-i18n="audit_log">救砖审计</span></h2>
+                <h2><span class="icon">≡</span> <span data-i18n="audit_log">救砖审计</span></h2>
                 <button class="btn btn-text btn-sm" data-action="refreshAuditLog" data-i18n="refresh">刷新</button>
             </div>
             <div class="card-body">
@@ -430,7 +453,7 @@
         </div>
 
         <!-- 手动操作 -->
-        <div class="card">
+        <div class="card" data-workspace-group="recovery">
             <div class="card-header">
                 <h2><span class="icon">!</span> <span data-i18n="actions">手动操作</span></h2>
             </div>
@@ -455,7 +478,7 @@
         </div>
 
         <!-- 日志 -->
-        <div class="card">
+        <div class="card" data-workspace-group="logs">
             <div class="card-header">
                 <h2><span class="icon">≡</span> <span data-i18n="logs">日志与历史</span></h2>
                 <div class="tabs">
@@ -476,7 +499,7 @@
         </div>
 
         <!-- 关于 -->
-        <div class="card">
+        <div class="card" data-workspace-group="logs">
             <div class="card-header">
                 <h2><span class="icon">i</span> <span data-i18n="about">关于</span></h2>
             </div>
@@ -484,7 +507,7 @@
                 <div class="info-grid">
                     <div class="info-tile">
                         <div class="label" data-i18n="version">版本</div>
-                        <div class="value text-mono">v3.4.1</div>
+                        <div class="value text-mono">v3.4.3</div>
                     </div>
                     <div class="info-tile">
                         <div class="label" data-i18n="manager">管理器</div>
@@ -495,7 +518,7 @@
                         <div class="value text-mono">jiayuxuan123/RescueX</div>
                     </div>
                 </div>
-                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.4.1：修复模块自身隐藏目录的误报。</p>
+                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.4.3：修复模块自身隐藏目录的误报。</p>
                 <div class="section-actions">
                     <button class="btn btn-text btn-sm" data-action="checkUpdate" data-i18n="check_update">检查更新</button>
                     <button class="btn btn-text btn-sm" data-action="showFeatures" data-i18n="feature_intro">功能介绍</button>

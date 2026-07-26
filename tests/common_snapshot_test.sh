@@ -11,8 +11,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 MODDIR="$TMP_ROOT/mod"
-. /workspace/common.sh
+. "$ROOT/common.sh"
 
 STATE_DIR="$TMP_ROOT/mod/webroot/state"
 SNAPSHOT_DIR="$STATE_DIR/snapshots"
@@ -172,46 +173,16 @@ assert_file_exists "$MODULE_BASE/alpha/disable" "合法状态应被恢复"
 assert_file_missing "$MODULE_BASE/beta/disable" "非法状态值应被忽略"
 pass "snapshot state validation"
 
-mkdir -p /data/adb/lsposed/disable_config
+LSPOSED_BASE_DIR="$TMP_ROOT/lsposed-root"
+mkdir -p "$LSPOSED_BASE_DIR/lsposed/disable_config"
 state=$(detect_lsposed_state)
-rmdir /data/adb/lsposed/disable_config
-rmdir /data/adb/lsposed 2>/dev/null || true
+rm -rf "$LSPOSED_BASE_DIR"
+unset LSPOSED_BASE_DIR
 assert_eq "disabled (legacy)" "$state" "legacy LSPosed 状态应被识别"
 pass "legacy lsposed detection"
 
-script_dir="$TMP_ROOT/script-tests"
-mkdir -p "$script_dir"
-printf '%s\n' 'rm -rf /data/adb/modules/bszip/work/cache' > "$script_dir/nested-module-cleanup.sh"
-if detect_destructive_script_content "$script_dir/nested-module-cleanup.sh" >/dev/null; then
-    fail "隐藏环境模块的深层工作目录清理不应被拦截"
-fi
-pass "nested module cleanup allowed"
+# Script interception was intentionally removed in v3.4.0; this suite covers current recovery behaviour.
 
-printf '%s\n' 'rm -rf /data/adb/modules/bszip' > "$script_dir/module-root-delete.sh"
-reason=$(detect_destructive_script_content "$script_dir/module-root-delete.sh")
-assert_eq "rm-rf-sensitive-path" "$reason" "模块根目录删除应继续拦截"
-pass "module root deletion blocked"
-
-printf '%s\n' 'rm -rf /data/adb/modules/TA_utl' > "$script_dir/self-module-cleanup.sh"
-if detect_destructive_script_content "$script_dir/self-module-cleanup.sh" /data/adb/modules/TA_utl >/dev/null; then
-    fail "模块自身目录清理不应被误报"
-fi
-
-printf '%s\n' 'rm -rf /data/adb/modules/.TA_utl' > "$script_dir/self-hidden-module-cleanup.sh"
-if detect_destructive_script_content "$script_dir/self-hidden-module-cleanup.sh" /data/adb/modules/TA_utl >/dev/null; then
-    fail "模块自身隐藏目录清理不应被误报"
-fi
-
-printf '%s\n' 'rm -rf /data/adb/modules/other-module /data/adb/modules/TA_utl' > "$script_dir/mixed-module-cleanup.sh"
-reason=$(detect_destructive_script_content "$script_dir/mixed-module-cleanup.sh" /data/adb/modules/TA_utl)
-assert_eq "rm-rf-sensitive-path" "$reason" "混合清理中的其他模块目录应继续拦截"
-pass "self module cleanup allowed"
-
-printf '%s\n' 'rm -rf "/data/adb/modules/.TA_utl"' > "$script_dir/hidden-self-module-cleanup.sh"
-if detect_destructive_script_content "$script_dir/hidden-self-module-cleanup.sh" /data/adb/modules/TA_utl >/dev/null; then
-    fail "隐藏自目录路径不应因替换顺序被误报"
-fi
-pass "hidden self path cleanup allowed"
 
 module_dir rescue-target
 disable_module_at_dir "$MODULE_BASE/rescue-target" rescue-target || fail "统一禁用函数应写入 disable 标记"
@@ -235,11 +206,6 @@ else
     fail "运行中模块脚本停止路径不应报错"
 fi
 
-printf '%s\n' 'find /data/adb/modules/bszip/work -type f -delete' > "$script_dir/nested-find-delete.sh"
-if detect_destructive_script_content "$script_dir/nested-find-delete.sh" >/dev/null; then
-    fail "隐藏环境模块的深层 find 清理不应被拦截"
-fi
-pass "nested find cleanup allowed"
 
 cat > "$STATE_DIR/config.conf" <<'EOF'
 ENABLED=invalid

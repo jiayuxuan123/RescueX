@@ -1435,7 +1435,8 @@ input[type="number"], input[type="text"] { min-height: 44px; border-radius: 6px;
 @media (max-width: 360px) {
     .container { padding-right: 12px; padding-left: 12px; }
     .appbar { margin-right: -12px; margin-left: -12px; padding-right: 12px; padding-left: 12px; }
-    .lang-switch { display: none; }
+    /* Language control must remain available on narrow screens; workspace-v2.css supplies the compact layout. */
+    .lang-switch { display: flex; }
     .status-value { font-size: 23px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } }
