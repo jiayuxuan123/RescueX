@@ -185,8 +185,10 @@ fi
 
 log "===== RescueX $RX_VERSION post-fs-data 启动 ====="
 log "配置: 阈值=$REBOOT_THRESHOLD 超时=$BOOT_TIMEOUT_SEC OTA超时=$OTA_TIMEOUT_SEC 渐进=$PROGRESSIVE_RESCUE dry=$DRY_RUN 宽限=$USER_REBOOT_GRACE_SEC"
+v35_health_touch postfs running "boot_start"
+v35_timeline_append BOOT_START info started "previous=$PREV_BOOT_RESULT,fail=$PREV_FAIL_COUNT"
 
-# 尽早执行脚本拦截。disable 标记负责后续启动，函数同时结束当前已运行的入口脚本。
+# RescueX only manages standard module disable markers; third-party scripts are never intercepted.
 
 # v2.5 新增：启动模式检测
 # Recovery / Fastbootd / Charger 等非正常启动模式不应被计入失败
@@ -208,8 +210,10 @@ if [ "$NON_NORMAL_BOOT" = "1" ]; then
     exit 0
 fi
 
-# 读取白名单
+# 读取白名单并扫描本次启动前后的模块变化。
 read_whitelist
+v35_apply_one_shot_safe_mode || log "警告：一次性安全模式计划处理失败"
+v35_scan_module_changes || log "警告：模块变更扫描失败"
 
 log "上次状态: result=$PREV_BOOT_RESULT fail=$PREV_FAIL_COUNT service_started=$PREV_SERVICE_STARTED"
 

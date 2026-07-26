@@ -144,6 +144,7 @@ fi
 # 1. 立即标记 SERVICE_STARTED=1（兜底）
 mark_service_started
 log "===== RescueX $RX_VERSION service 启动 ====="
+v35_health_touch service running "waiting_for_boot_completed"
 
 # 2. 等待系统真正完成启动（带 300 秒超时）
 WAIT_SEC=0
@@ -171,6 +172,8 @@ until [ "$_boot_done" = "1" ]; do
 done
 if [ "$_boot_done" != "1" ]; then
     log "系统启动未确认完成，跳过成功收尾"
+    v35_health_touch service error "boot_completed_timeout"
+    v35_timeline_append BOOT_FAIL critical timeout "wait=${WAIT_MAX}s"
     exit 1
 fi
 unset _boot_done
@@ -191,7 +194,9 @@ update_status_fields "$BOOT_END" 1 "SUCCESS" 0 "$CURRENT_UPTIME"
 # 修正可能异常的 LAST_RESCUE_TIME（post-fs-data 阶段时钟未同步）
 fix_last_rescue_time
 
-# 启动成功后回滚救砖期间的脚本权限锁定和风险脚本隔离记录
+# A confirmed successful boot may restore only modules disabled by the one-shot
+# safe-mode transaction. Rescue actions and third-party script permissions are untouched.
+v35_restore_one_shot_safe_mode || log "警告：一次性安全模式精确恢复未完成"
 
 # 从状态文件读取计算后的 boot_duration 用于日志
 BOOT_DURATION=0
@@ -221,6 +226,10 @@ fi
 # v3.0.1: 启动成功后保存已知良好模块列表
 log "保存已知良好模块列表（用于嫌疑追踪）"
 save_good_modules
+v35_promote_module_inventory || log "警告：模块变更基线保存失败"
+v35_timeline_append BOOT_SUCCESS success confirmed "duration=${BOOT_DURATION}s"
+v35_health_touch service healthy "boot_success,duration=${BOOT_DURATION}s"
+v35_health_touch postfs healthy "boot_confirmed"
 
 # v2.7.0: 启动成功后同步持久数据
 sync_to_persist

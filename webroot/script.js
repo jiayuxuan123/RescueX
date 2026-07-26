@@ -1,4 +1,4 @@
-/* RescueX v3.4.3 - WebUI 控制器
+/* RescueX v3.5.0 - WebUI 控制器
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -12,8 +12,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.4.3';
-const APP_VERSION_CODE = 34030;
+const APP_VERSION = 'v3.5.0';
+const APP_VERSION_CODE = 35000;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -38,6 +38,14 @@ function utf8ToBase64(str) {
 const I18N = {
     zh: {
         current_status: '当前状态',
+        v35_tools_title: '诊断与一次性安全模式',
+        v35_tools_desc: '模拟器只生成建议；一次性安全模式会记录精确恢复清单，并只在本次操作涉及的模块范围内恢复。',
+        v35_simulate: '运行只读模拟',
+        v35_status: '刷新安全模式状态',
+        v35_arm: '仅下次启动安全模式',
+        v35_cancel: '取消并精确恢复',
+        v35_export: '导出脱敏诊断包',
+        v35_ready: '等待操作。诊断包只包含脱敏后的状态与日志摘要。',
         workspace_overview: '概览',
         workspace_protection: '保护设置',
         workspace_modules: '模块管理',
@@ -335,6 +343,14 @@ const I18N = {
     },
     en: {
         current_status: 'Current Status',
+        v35_tools_title: 'Diagnostics & one-shot safe mode',
+        v35_tools_desc: 'The simulator is read-only. One-shot safe mode journals the exact recovery set and restores only markers created by this operation.',
+        v35_simulate: 'Run read-only simulation',
+        v35_status: 'Refresh safe mode status',
+        v35_arm: 'Safe mode for next boot only',
+        v35_cancel: 'Cancel and restore exactly',
+        v35_export: 'Export redacted diagnostic bundle',
+        v35_ready: 'Ready. Diagnostic bundles contain only redacted status and log summaries.',
         workspace_overview: 'Overview',
         workspace_protection: 'Protection',
         workspace_modules: 'Modules',
@@ -673,7 +689,8 @@ class RescueXUI {
             'restoreSnapshot', 'runIntegrityCheck', 'saveConfig', 'saveCustomDirs', 'saveGoodModules',
             'saveWhitelist', 'selectAllModules', 'showFeatures', 'showPrivacy',
             'showUsage', 'takeSnapshot', 'testWatchdog', 'toggleEnabled',
-            'togglePatchFlag', 'unfreezeApps'
+            'togglePatchFlag', 'unfreezeApps', 'v35RunSimulation', 'v35RefreshStatus',
+            'v35ArmOneShotSafeMode', 'v35CancelOneShotSafeMode', 'v35ExportDiagnostic'
         ]);
 
         // 应用初始语言
@@ -875,7 +892,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.4.3' : 'Automatic Boot Rescue v3.4.3';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.0' : 'Automatic Boot Rescue v3.5.0';
     }
 
     openExternal(url) {
@@ -3278,6 +3295,103 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         } catch (e) {
             this.toast(this.t('save_failed'), 'error');
         }
+    }
+
+    // === v3.5.0: diagnostics and one-shot safe mode ===
+    v35Command(functionName) {
+        const allowed = new Set([
+            'v35_simulate_rescue', 'v35_one_shot_status',
+            'v35_arm_one_shot_safe_mode', 'v35_cancel_one_shot_safe_mode',
+            'v35_generate_diagnostic_bundle'
+        ]);
+        if (!allowed.has(functionName)) throw new Error('Unsupported v3.5 action');
+        return `MODDIR="${this.basePath}"; . "${this.basePath}/common.sh" 2>/dev/null && ${functionName}`;
+    }
+
+    v35SetOutput(output) {
+        const box = this.qs('#v35-output');
+        if (box) box.textContent = String(output || '--').trim() || '--';
+    }
+
+    async v35RunSimulation() {
+        this.showLoading(true);
+        try {
+            const result = await this.exec(this.v35Command('v35_simulate_rescue'));
+            this.v35SetOutput(result);
+            this.toast(this.lang === 'zh' ? '只读模拟已完成' : 'Read-only simulation completed', 'success');
+        } catch (e) {
+            this.v35SetOutput(this.lang === 'zh' ? '模拟失败，请查看救援日志。' : 'Simulation failed. Check the rescue log.');
+            this.toast(this.t('save_failed'), 'error');
+        }
+        this.showLoading(false);
+    }
+
+    async v35RefreshStatus() {
+        try {
+            const result = await this.exec(this.v35Command('v35_one_shot_status'));
+            this.v35SetOutput(result);
+        } catch (e) {
+            this.v35SetOutput(this.lang === 'zh' ? '无法读取一次性安全模式状态。' : 'Unable to read one-shot safe mode status.');
+        }
+    }
+
+    async v35ArmOneShotSafeMode() {
+        const message = this.lang === 'zh'
+            ? '将立即写入本次事务涉及模块的禁用标记，下一次启动进入安全模式；成功启动后仅按事务清单恢复。不会触碰白名单或原先已禁用模块。是否继续？'
+            : 'This writes disable markers for this transaction now, starts the next boot in safe mode, and restores only markers recorded in its journal after a successful boot. Whitelisted and previously disabled modules are untouched. Continue?';
+        if (!await this.confirmDialog(this.t('confirm_title'), message, this.t('btn_confirm'), 'btn-danger')) return;
+        this.showLoading(true);
+        try {
+            const result = await this.exec(`${this.v35Command('v35_arm_one_shot_safe_mode')}; rc=$?; v35_one_shot_status; echo RESULT=$rc`);
+            this.v35SetOutput(result);
+            if (result.includes('RESULT=0')) {
+                this.toast(this.lang === 'zh' ? '一次性安全模式已布防' : 'One-shot safe mode armed', 'success');
+                await this.loadDisabledModules();
+            } else {
+                this.toast(this.t('save_failed'), 'error');
+            }
+        } catch (e) {
+            this.toast(this.t('save_failed'), 'error');
+        }
+        this.showLoading(false);
+    }
+
+    async v35CancelOneShotSafeMode() {
+        const message = this.lang === 'zh'
+            ? '将根据事务清单精确恢复 RescueX 本次写入的禁用标记；不会恢复原先已禁用的其他模块。是否继续？'
+            : 'This restores only disable markers written by this RescueX transaction according to its journal. Previously disabled modules are not changed. Continue?';
+        if (!await this.confirmDialog(this.t('confirm_title'), message, this.t('btn_confirm'), 'btn-filled')) return;
+        this.showLoading(true);
+        try {
+            const result = await this.exec(`${this.v35Command('v35_cancel_one_shot_safe_mode')}; rc=$?; v35_one_shot_status; echo RESULT=$rc`);
+            this.v35SetOutput(result);
+            if (result.includes('RESULT=0')) {
+                this.toast(this.lang === 'zh' ? '已按事务清单恢复' : 'Restored from transaction journal', 'success');
+                await this.loadDisabledModules();
+            } else {
+                this.toast(this.t('save_failed'), 'error');
+            }
+        } catch (e) {
+            this.toast(this.t('save_failed'), 'error');
+        }
+        this.showLoading(false);
+    }
+
+    async v35ExportDiagnostic() {
+        this.showLoading(true);
+        try {
+            const script = `${this.v35Command('v35_generate_diagnostic_bundle')}; rc=$?; echo RESULT=$rc`;
+            const result = await this.exec(script, EXEC_REPORT_TIMEOUT_MS);
+            this.v35SetOutput(result);
+            if (result.includes('RESULT=0')) {
+                this.toast(this.lang === 'zh' ? '脱敏诊断包已生成，路径已显示。' : 'Redacted diagnostic bundle created; its path is shown.', 'success', 5000);
+            } else {
+                this.toast(this.lang === 'zh' ? '未找到可用 ZIP 工具，诊断包未生成。' : 'No supported ZIP tool was found; bundle was not created.', 'warn', 5000);
+            }
+        } catch (e) {
+            this.toast(this.t('export_failed'), 'error');
+        }
+        this.showLoading(false);
     }
 
     // === v3.0.1: APP 解冻 ===

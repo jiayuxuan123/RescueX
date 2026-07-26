@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.4.3"
-RX_VERSION_CODE=34030
+RX_VERSION="v3.5.0"
+RX_VERSION_CODE=35000
 
 # ============================================================
 # 路径初始化
@@ -174,7 +174,16 @@ sync_to_persist() {
         done
         prune_manual_snapshots_in_dir "$PERSIST_DIR/snapshots"
     fi
+    # v3.5 observability and snapshot metadata are persisted as one private tree.
+    if [ -d "$STATE_DIR/v35" ]; then
+        rm -rf "$PERSIST_DIR/v35.tmp" 2>/dev/null
+        cp -R "$STATE_DIR/v35" "$PERSIST_DIR/v35.tmp" 2>/dev/null && {
+            rm -rf "$PERSIST_DIR/v35" 2>/dev/null
+            mv "$PERSIST_DIR/v35.tmp" "$PERSIST_DIR/v35" 2>/dev/null
+        }
+    fi
     chmod 0700 "$PERSIST_DIR" 2>/dev/null
+    [ ! -d "$PERSIST_DIR/v35" ] || chmod -R go-rwx "$PERSIST_DIR/v35" 2>/dev/null
 }
 
 # 从外部持久目录恢复数据（模块更新/重装后自动恢复）
@@ -196,6 +205,11 @@ restore_from_persist() {
         done
         normalize_snapshot_storage
         prune_manual_snapshots_in_dir "$SNAPSHOT_DIR"
+    fi
+    # v3.5 private tree restore (only when the in-module copy is absent).
+    if [ -d "$PERSIST_DIR/v35" ] && [ ! -d "$STATE_DIR/v35" ]; then
+        cp -R "$PERSIST_DIR/v35" "$STATE_DIR/v35" 2>/dev/null && restored=$((restored + 1))
+        chmod -R go-rwx "$STATE_DIR/v35" 2>/dev/null
     fi
     # boot_status 特殊处理：合并累计字段
     if [ -f "$PERSIST_DIR/boot_status" ]; then
@@ -307,6 +321,9 @@ log_rescue_action() {
     fi
     # 同步到持久目录
     [ -d "$PERSIST_DIR" ] && cp "$audit_file" "$PERSIST_DIR/rescue_audit.log" 2>/dev/null
+    if command -v v35_timeline_append >/dev/null 2>&1; then
+        v35_timeline_append RESCUE warning "$action_type" "$detail"
+    fi
 }
 
 # 列出救砖审计日志
@@ -3123,6 +3140,10 @@ integrity_check_once() {
     fi
 
     _integrity_check_once_legacy
+    local rc=$?
+    command -v v35_integrity_details_update >/dev/null 2>&1 && v35_integrity_details_update
+    command -v v35_health_touch >/dev/null 2>&1 && v35_health_touch integrity $([ "$rc" -eq 0 ] && echo healthy || echo error) "check_rc=$rc"
+    return "$rc"
 }
 
 # 证据缺失时不恢复任何模块，也不删除用户/第三方写入的 disable 文件。
@@ -3189,3 +3210,11 @@ boot_health_confirmed() {
     prop=$(getprop sys.boot_completed 2>/dev/null); [ "$prop" = 1 ] || prop=$(getprop dev.bootcomplete 2>/dev/null); [ "$prop" = 1 ] || prop=$(getprop service.bootcomplete 2>/dev/null)
     [ "$prop" = 1 ] && [ "$started" = 1 ]
 }
+
+
+# RescueX v3.5 observability, snapshot and one-shot safe-mode extensions.
+# Kept in a separate library so the proven rescue core remains independently testable.
+if [ -f "$MODDIR/features-v35.sh" ]; then
+    . "$MODDIR/features-v35.sh"
+    v35_init_paths
+fi

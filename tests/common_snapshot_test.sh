@@ -197,8 +197,8 @@ mkdir -p "$MODULE_BASE/.hidden-target"
 printf '%s\n' '#!/system/bin/sh' > "$MODULE_BASE/.hidden-target/service.sh"
 _disable_module_by_dir "$MODULE_BASE/hidden-target" || fail "禁用模块时应同步处理隐藏副本"
 assert_file_exists "$MODULE_BASE/.hidden-target/disable" "隐藏副本应写入 disable 标记"
-[ "$(stat -c %a "$MODULE_BASE/.hidden-target/service.sh" 2>/dev/null)" = "0" ] || fail "隐藏副本入口脚本应被锁定"
-pass "hidden module disable sync"
+[ "$(stat -c %a "$MODULE_BASE/.hidden-target/service.sh" 2>/dev/null)" != "0" ] || fail "禁用模块不得锁定第三方入口脚本"
+pass "hidden module disable sync without script interception"
 
 if _stop_module_script_processes "$MODULE_BASE/rescue-target" "$MODULE_BASE/.rescue-target"; then
     pass "running module script stop path"

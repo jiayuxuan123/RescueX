@@ -7,7 +7,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.4.3"
+RX_VERSION="v3.5.0"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
