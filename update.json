@@ -3,5 +3,5 @@
   "versionCode": 35002,
   "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.2/RescueX-v3.5.2.zip",
   "changelog": "原生看门狗正式落地：Android NDK r27c arm64-v8a PIE 二进制、Shell 安全回退、脚本执行权限修复与发布包完整校验",
-  "sha256": "PLACEHOLDER_FILL_AFTER_RELEASE_BUILD"
+  "sha256": "e642edea89401141b012c953e76a5ab6ab1374b9c1a3f63ade096f3d04c97602"
 }
