@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.1"
-RX_VERSION_CODE=35001
+RX_VERSION="v3.5.3"
+RX_VERSION_CODE=35003
 
 # ============================================================
 # 路径初始化
@@ -52,6 +52,7 @@ _rescuex_init_paths() {
     INTEGRITY_STATUS_FILE="$STATE_DIR/integrity_status"
     INTEGRITY_PID_FILE="$STATE_DIR/integrity_pid"
     INTEGRITY_SCRIPT="$MODDIR/integrity.sh"
+    INTEGRITY_UPGRADE_PENDING_FILE="${PERSIST_DIR:-/data/adb/rescuex_data}/integrity_upgrade_pending"
 
     # v3.0.0: 嫌疑模块追踪
     GOOD_MODULES_FILE="$STATE_DIR/good_modules.list"   # 成功开机后的已知良好模块列表
@@ -162,7 +163,7 @@ sync_to_persist() {
     mkdir -p "$PERSIST_DIR" 2>/dev/null
     normalize_snapshot_storage
     sync_removable_persist_state_files
-    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session integrity.manifest; do
+    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log onboarding_ack good_modules.list rescue_level auto_snapshot_session integrity.manifest integrity_upgrade_pending; do
         [ -f "$STATE_DIR/$f" ] && cp "$STATE_DIR/$f" "$PERSIST_DIR/$f" 2>/dev/null
     done
     # 快照目录
@@ -3119,7 +3120,22 @@ is_safe_custom_dir() {
 # 更新后应在本模块目录的当前文件上建立新基线，而非把版本变化误报为文件被篡改。
 # 真正的篡改仍由同版本下的哈希比对报告为 COMPROMISED。
 integrity_check_once() {
-    local version manifest_version
+    local version manifest_version pending_file
+    pending_file="$PERSIST_DIR/integrity_upgrade_pending"
+    # A module overlay/update is allowed to replace several files at once.
+    # Rebuild exactly once from the completed tree before any normal comparison;
+    # this prevents a stale same-version manifest from calling a valid update
+    # COMPROMISED.
+    if [ -f "$pending_file" ]; then
+        if integrity_build_manifest; then
+            integrity_write_status BASELINE_CREATED "覆盖更新完成，已建立当前版本基线"
+            rm -f "$pending_file" "$STATE_DIR/integrity_upgrade_pending" 2>/dev/null
+            sync_to_persist
+            return 0
+        fi
+        integrity_write_status ERROR "覆盖更新后无法建立完整性基线"
+        return 1
+    fi
     version=$(grep '^versionCode=' "$MODDIR/module.prop" 2>/dev/null | cut -d= -f2)
     case "$version" in ''|*[!0-9]*) version=0 ;; esac
 

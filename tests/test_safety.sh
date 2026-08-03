@@ -58,4 +58,19 @@ printf '# changed after baseline\n' >> "$IMOD/service.sh"
 if integrity_check_once; then echo 'same-version tamper accepted' >&2; exit 1; fi
 grep -q '^RESULT=COMPROMISED$' "$INTEGRITY_STATUS_FILE"
 ok 'same-version integrity change is blocked'
+# 8: service.sh may update module.prop description at runtime; that metadata
+# must not turn a healthy same-version module into a false COMPROMISED state.
+IMOD2="$TD/imod-mutable"; mkdir -p "$IMOD2/webroot"
+for f in module.prop common.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh; do cp "$ROOT/$f" "$IMOD2/$f"; done
+for f in index.html script.js style.css workspace-v2.css; do cp "$ROOT/webroot/$f" "$IMOD2/webroot/$f"; done
+MODDIR="$IMOD2"
+INTEGRITY_MANIFEST_FILE="$STATE_DIR/integrity.manifest"
+INTEGRITY_STATUS_FILE="$STATE_DIR/integrity_status"
+printf '#VERSION=34020\n' > "$INTEGRITY_MANIFEST_FILE"
+integrity_check_once
+grep -q '^RESULT=BASELINE_CREATED$' "$INTEGRITY_STATUS_FILE"
+printf 'description=[守护中] runtime metadata\n' >> "$IMOD2/module.prop"
+integrity_check_once
+grep -q '^RESULT=OK$' "$INTEGRITY_STATUS_FILE"
+ok 'runtime module metadata is excluded from integrity'
 printf 'all %s safety tests passed\n' "$pass"

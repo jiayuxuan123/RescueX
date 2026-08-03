@@ -1,7 +1,7 @@
 {
-  "version": "v3.5.2",
-  "versionCode": 35002,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.2/RescueX-v3.5.2.zip",
+  "version": "v3.5.3",
+  "versionCode": 35003,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.3/RescueX-v3.5.3.zip",
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md",
-  "sha256": "e642edea89401141b012c953e76a5ab6ab1374b9c1a3f63ade096f3d04c97602"
+  "sha256": "PLACEHOLDER_FILL_AFTER_RELEASE_BUILD"
 }

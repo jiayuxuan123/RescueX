@@ -228,8 +228,9 @@ _three_level_rescue_unlocked() {
 
 # Expand non-cryptographic integrity coverage. This remains tamper detection,
 # not anti-root attestation; release signatures are handled outside the module.
+# module.prop is excluded because service.sh intentionally refreshes its description.
 integrity_target_files() {
-    printf '%s\n' common.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh module.prop webroot/index.html webroot/script.js webroot/style.css webroot/workspace-v2.css
+    printf '%s\n' common.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh webroot/index.html webroot/script.js webroot/style.css webroot/workspace-v2.css
 }
 
 # A boot is healthy only after a committed SUCCESS state, never merely because

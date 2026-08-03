@@ -7,7 +7,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.5.1"
+RX_VERSION="v3.5.3"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -98,10 +98,46 @@ done
 # v2.7.0: 持久化目录（模块更新不丢失）
 PERSIST_DIR="/data/adb/rescuex_data"
 MAX_MANUAL_SNAPSHOTS=12
+mkdir -p "$PERSIST_DIR" 2>/dev/null
 
 CONFIG_PRESERVED=false
 WHITELIST_PRESERVED=false
 IS_UPGRADE=false
+
+# v3.5.3: an old integrity daemon must be stopped before the module directory
+# is replaced. Otherwise it can hash a half-updated tree and overwrite the new
+# integrity status with a false COMPROMISED result.
+stop_previous_integrity_daemon() {
+    local pid_file pid cmdline waited
+    for pid_file in "$OLD_STATE_DIR/integrity_pid" "$PERSIST_DIR/integrity_pid"; do
+        [ -f "$pid_file" ] || continue
+        pid=$(cat "$pid_file" 2>/dev/null)
+        case "$pid" in ''|*[!0-9]*) continue ;; esac
+        cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+        case "$cmdline" in
+            *integrity.sh*)
+                kill "$pid" 2>/dev/null || true
+                waited=0
+                while [ "$waited" -lt 5 ] && kill -0 "$pid" 2>/dev/null; do
+                    sleep 1
+                    waited=$((waited + 1))
+                done
+                kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+                ;;
+        esac
+    done
+    [ -z "$OLD_STATE_DIR" ] || rm -f "$OLD_STATE_DIR/.integrity_start.lock" 2>/dev/null
+    rm -f "$STATE_DIR/.integrity_start.lock" 2>/dev/null
+}
+if [ -n "$OLD_STATE_DIR" ] || [ -f "$PERSIST_DIR/integrity_pid" ]; then
+    stop_previous_integrity_daemon
+fi
+# Mark every install/overlay as requiring one post-install baseline rebuild.
+# This is intentionally outside the module directory so an overlay cannot
+# preserve an old same-version manifest by accident.
+printf 'VERSION_CODE=%s\n' "$(grep '^versionCode=' "$MODPATH/module.prop" 2>/dev/null | cut -d= -f2)" > "$PERSIST_DIR/integrity_upgrade_pending.tmp.$$"
+chmod 0600 "$PERSIST_DIR/integrity_upgrade_pending.tmp.$$" 2>/dev/null
+mv -f "$PERSIST_DIR/integrity_upgrade_pending.tmp.$$" "$PERSIST_DIR/integrity_upgrade_pending" 2>/dev/null || rm -f "$PERSIST_DIR/integrity_upgrade_pending.tmp.$$"
 
 # v2.7.0: 优先从旧版模块目录迁移，其次从持久化目录恢复
 if [ -n "$OLD_STATE_DIR" ]; then
@@ -129,6 +165,7 @@ if [ -n "$OLD_STATE_DIR" ]; then
     [ -f "$OLD_STATE_DIR/auto_snapshot_session" ] && cp "$OLD_STATE_DIR/auto_snapshot_session" "$STATE_DIR/auto_snapshot_session" 2>/dev/null
     # v2.7.0: 保留救砖审计日志
     [ -f "$OLD_STATE_DIR/rescue_audit.log" ] && cp "$OLD_STATE_DIR/rescue_audit.log" "$STATE_DIR/rescue_audit.log" 2>/dev/null
+    [ -f "$OLD_STATE_DIR/onboarding_ack" ] && cp "$OLD_STATE_DIR/onboarding_ack" "$STATE_DIR/onboarding_ack" 2>/dev/null
     # 快照迁移
     if [ -d "$OLD_STATE_DIR/snapshots" ]; then
         snap_count=0
@@ -155,6 +192,7 @@ if [ "$CONFIG_PRESERVED" != "true" ] && [ -d "$PERSIST_DIR" ]; then
     [ -f "$PERSIST_DIR/patch_fail_count" ] && cp "$PERSIST_DIR/patch_fail_count" "$STATE_DIR/patch_fail_count" 2>/dev/null
     [ -f "$PERSIST_DIR/auto_snapshot_session" ] && cp "$PERSIST_DIR/auto_snapshot_session" "$STATE_DIR/auto_snapshot_session" 2>/dev/null
     [ -f "$PERSIST_DIR/rescue_audit.log" ] && cp "$PERSIST_DIR/rescue_audit.log" "$STATE_DIR/rescue_audit.log" 2>/dev/null
+    [ -f "$PERSIST_DIR/onboarding_ack" ] && cp "$PERSIST_DIR/onboarding_ack" "$STATE_DIR/onboarding_ack" 2>/dev/null
     [ -f "$PERSIST_DIR/good_modules.list" ] && cp "$PERSIST_DIR/good_modules.list" "$STATE_DIR/good_modules.list" 2>/dev/null
     if [ -d "$PERSIST_DIR/snapshots" ]; then
         for snap in "$PERSIST_DIR/snapshots"/snap-*.txt "$PERSIST_DIR/snapshots"/auto-snap-*.txt; do
@@ -287,7 +325,7 @@ fi
 
 # v2.7.0: 创建持久化目录并同步
 mkdir -p "$PERSIST_DIR" 2>/dev/null
-    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag first_run rescue_audit.log good_modules.list rescue_level; do
+    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag first_run rescue_audit.log onboarding_ack good_modules.list rescue_level; do
     [ -f "$STATE_DIR/$f" ] && cp "$STATE_DIR/$f" "$PERSIST_DIR/$f" 2>/dev/null
 done
 if [ -d "$SNAPSHOT_DIR" ]; then
@@ -309,9 +347,8 @@ set_perm "$MODPATH/uninstall.sh"     0 0 0700
 set_perm "$MODPATH/action.sh"        0 0 0700
 set_perm "$MODPATH/customize.sh"     0 0 0700
 set_perm "$MODPATH/module.prop" 0 0 0644
-# v3.0.1: 创建 module.prop 备份（service.sh 更新描述前恢复用，防止写入失败损坏）
-cp -f "$MODPATH/module.prop" "$MODPATH/module.prop.bak" 2>/dev/null
-set_perm "$MODPATH/module.prop.bak" 0 0 0644
+# v3.5.3: remove the obsolete backup that could roll metadata back after an overlay update.
+rm -f "$MODPATH/module.prop.bak" "$MODPATH/module.prop.tmp."* 2>/dev/null
 set_perm "$MODPATH/README.md" 0 0 0644
 set_perm "$MODPATH/LICENSE"  0 0 0644
 set_perm "$MODPATH/webroot"           0 0 0755
@@ -326,7 +363,7 @@ set_perm "$SNAPSHOT_DIR" 0 0 0700
 set_perm "$PATCH_BACKUP_DIR" 0 0 0700
 
 # 状态文件权限
-for f in config.conf whitelist.conf boot_status boot_history rescue.log; do
+for f in config.conf whitelist.conf boot_status boot_history rescue.log onboarding_ack; do
     [ -f "$STATE_DIR/$f" ] && set_perm "$STATE_DIR/$f" 0 0 0600
 done
 

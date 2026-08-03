@@ -108,10 +108,9 @@ update_module_prop() {
     new_desc="[守护中] ${model} | 阈值:${threshold}次 | 超时:${timeout_val}s | 救砖:${rescue_count}次 | 级别:${level}${suspect_info}"
 
     if [ -f "$MODDIR/module.prop" ]; then
-        # 先恢复备份（如果存在），防止多次更新积累冗余
-        if [ -f "$MODDIR/module.prop.bak" ]; then
-            cp -f "$MODDIR/module.prop.bak" "$MODDIR/module.prop" 2>/dev/null
-        fi
+        # module.prop is runtime metadata. Rewrite only its description through
+        # a temp file; never restore a stale backup that could roll back the
+        # installed versionCode after an overlay update.
         local prop_tmp="$MODDIR/module.prop.tmp.$$"
         if grep -v "^description=" "$MODDIR/module.prop" > "$prop_tmp" 2>/dev/null && \
             echo "description=$new_desc" >> "$prop_tmp" && \
@@ -119,8 +118,7 @@ update_module_prop() {
             chmod 0644 "$MODDIR/module.prop" 2>/dev/null
         else
             rm -f "$prop_tmp" 2>/dev/null
-            cp -f "$MODDIR/module.prop.bak" "$MODDIR/module.prop" 2>/dev/null
-            log "警告：module.prop 更新失败，已尝试恢复备份"
+            log "警告：module.prop 更新失败，保留当前元数据"
         fi
     fi
 }

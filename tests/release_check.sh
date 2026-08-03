@@ -26,8 +26,19 @@ json_version=$(python3 -c 'import json; print(json.load(open("update.json"))["ve
 json_version_code=$(python3 -c 'import json; print(json.load(open("update.json"))["versionCode"])')
 [ "$version" = "$json_version" ] || { printf 'VERSION_MISMATCH\n' >&2; exit 1; }
 [ "$version_code" = "$json_version_code" ] || { printf 'VERSION_CODE_MISMATCH\n' >&2; exit 1; }
+case "$(python3 -c 'import json; print(json.load(open("update.json"))["changelog"])')" in
+    http://*|https://*) ;;
+    *) printf 'CHANGELOG_URL_NOT_HTTP(S)\n' >&2; exit 1 ;;
+esac
 grep -q "const APP_VERSION = '$version';" webroot/script.js
 grep -q "const APP_VERSION_CODE = $version_code;" webroot/script.js
+grep -q "RX_VERSION=\"$version\"" common.sh
+grep -q "RX_VERSION_CODE=$version_code" common.sh
+grep -q "onboarding_ack" webroot/script.js
+grep -q "module.prop is excluded" v351-safety.sh
+[ ! -e module.prop.bak ] || { printf 'STALE_MODULE_PROP_BACKUP_PRESENT\n' >&2; exit 1; }
+grep -q "const ONBOARDING_NOTICE_REVISION = 'r2';" webroot/script.js
+grep -q 'versionChanged && noticeChanged' webroot/script.js
 grep -q "data-action=\"runIntegrityCheck\"" webroot/index.html
 grep -q "'runIntegrityCheck'" webroot/script.js
 grep -q 'data-action="v35RunSimulation"' webroot/index.html
