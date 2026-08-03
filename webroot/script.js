@@ -1,4 +1,4 @@
-/* RescueX v3.5.4 - WebUI 控制器
+/* RescueX v3.5.5 - WebUI 控制器
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -12,8 +12,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.5.4';
-const APP_VERSION_CODE = 35004;
+const APP_VERSION = 'v3.5.5';
+const APP_VERSION_CODE = 35005;
 // The notice is shown only when both the app version and the notice content
 // revision changed. Exiting/re-entering, or a version-only update with the same
 // notice text, stays silent. Bump rN only when this notice content changes.
@@ -923,7 +923,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.4' : 'Automatic Boot Rescue v3.5.4';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.5' : 'Automatic Boot Rescue v3.5.5';
     }
 
     openExternal(url) {
@@ -1017,7 +1017,7 @@ done`;
     }
 
     // === 桥接执行（统一 KSU / Magisk v27）===
-    // v3.5.4: execStrict preserves exit code, timeout and exception state.
+    // v3.5.5: execStrict preserves exit code, timeout and exception state.
     // The legacy exec() wrapper remains for read-only calls that only need stdout.
     execStrict(cmd, timeoutMs = EXEC_DEFAULT_TIMEOUT_MS) {
         return new Promise(resolve => {
@@ -1880,15 +1880,15 @@ done`;
         ];
         try {
             // LOG-006: Atomic write (tmp + sync + mv) to prevent config corruption on power loss
-            const cmd = `cd "${this.stateDir}" && {
-cat > config.conf.tmp.$$ << 'RXCONF'
+            const cmd = `umask 077; mkdir -p "${this.stateDir}" "/data/adb/rescuex_data" && {
+cat > "${this.stateDir}/config.conf.tmp.$$" << 'RXCONF'
 ${lines.join('\n')}
 RXCONF
-sync config.conf.tmp.$$ 2>/dev/null
-mv config.conf.tmp.$$ config.conf
-} && echo OK`;
-            const result = await this.exec(cmd);
-            if (result.includes('OK')) {
+sync "${this.stateDir}/config.conf.tmp.$$" 2>/dev/null
+mv -f "${this.stateDir}/config.conf.tmp.$$" "${this.stateDir}/config.conf"
+} && cp -f "${this.stateDir}/config.conf" "/data/adb/rescuex_data/config.conf.tmp.$$" && sync "/data/adb/rescuex_data/config.conf.tmp.$$" 2>/dev/null && mv -f "/data/adb/rescuex_data/config.conf.tmp.$$" "/data/adb/rescuex_data/config.conf" && chmod 0600 "${this.stateDir}/config.conf" "/data/adb/rescuex_data/config.conf" && echo OK`;
+            const result = await this.execStrict(cmd);
+            if (result.ok && result.stdout.includes('OK')) {
                 this.config = {
                     ENABLED: enabled, REBOOT_THRESHOLD: String(t),
                     BOOT_TIMEOUT_SEC: String(to), OTA_TIMEOUT_SEC: String(ota),
@@ -1945,7 +1945,7 @@ mv config.conf.tmp.$$ config.conf
     }
 
     async importConfig() {
-        // v3.5.4: Atomic import. Write to temp files, validate, then rename.
+        // v3.5.5: Atomic import. Write to temp files, validate, then rename.
         // If either file fails, neither is committed.
         const filepath = '/sdcard/Download/rescuex-config.json';
         const confirm = await this.confirmDialog(
@@ -1998,7 +1998,7 @@ mv config.conf.tmp.$$ config.conf
                 if (!/^[A-Za-z0-9+/=]*$/.test(wlB64)) { this.toast(this.t('config_import_failed'), 'error'); return; }
             }
 
-            // v3.5.4: Write both to temp, then rename atomically.
+            // v3.5.5: Write both to temp, then rename atomically.
             const tmpConf = `${this.confFile}.import.$$`;
             const tmpWl = `${this.whitelistFile}.import.$$`;
             const writeConf = `printf '%s' '${configB64}' | base64 -d > '${tmpConf}' && echo OK`;
@@ -2019,7 +2019,8 @@ mv config.conf.tmp.$$ config.conf
             // Commit: rename temp to final. mv is atomic on same filesystem.
             const commitConf = await this.execStrict(`mv -f '${tmpConf}' '${this.confFile}' && echo OK`);
             const commitWl = wlB64 ? await this.execStrict(`mv -f '${tmpWl}' '${this.whitelistFile}' && echo OK`) : { ok: true, stdout: 'OK' };
-            if (commitConf.ok && commitConf.stdout.includes('OK') && commitWl.ok && commitWl.stdout.includes('OK')) {
+            const mirrorConf = await this.execStrict(`mkdir -p '/data/adb/rescuex_data' && cp -f '${this.confFile}' '/data/adb/rescuex_data/config.conf.import.$$' && sync '/data/adb/rescuex_data/config.conf.import.$$' 2>/dev/null && mv -f '/data/adb/rescuex_data/config.conf.import.$$' '/data/adb/rescuex_data/config.conf' && chmod 0600 '/data/adb/rescuex_data/config.conf' && echo OK`);
+            if (commitConf.ok && commitConf.stdout.includes('OK') && commitWl.ok && commitWl.stdout.includes('OK') && mirrorConf.ok && mirrorConf.stdout.includes('OK')) {
                 this.toast(this.t('config_imported'), 'success');
                 await this.loadConfig();
                 await this.loadModules();
@@ -2521,7 +2522,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
 
     // === v2.5: 首次运行引导 ===
     async checkFirstRun() {
-        // v3.5.4: acknowledgement is stored in the module state and in the
+        // v3.5.5: acknowledgement is stored in the module state and in the
         // external RescueX persistence directory. Do not use WebView
         // localStorage as the source of truth: some managers recreate the
         // WebView storage whenever the user exits the page.
@@ -2563,7 +2564,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         logo.textContent = 'R';
         const title = document.createElement('h2');
         title.style.cssText = 'margin:0;font-size:18px;color:var(--rx-ink,#1a1a2e);';
-        title.textContent = isZh ? 'RescueX v3.5.4 更新须知' : 'RescueX v3.5.4 Update Notice';
+        title.textContent = isZh ? 'RescueX v3.5.5 更新须知' : 'RescueX v3.5.5 Update Notice';
         header.appendChild(logo);
         header.appendChild(title);
 
@@ -2583,7 +2584,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 '一次性安全模式会立即写入禁用标记，下次启动生效，请确认后再布防。',
                 '覆盖更新后如遇异常，可先卸载模块（会彻底清理状态和持久化目录）再重新安装。',
             ]},
-            { title: '✨ v3.5.4 新增与修复', items: [
+            { title: '✨ v3.5.5 新增与修复', items: [
                 '安全修复：慢启动不再残留 BOOTING 导致误救砖；救砖必须验证 disable 标记实际写入。',
                 '修复覆盖更新时旧自检守护未停止、运行时元数据变化导致的完整性误报。',
                 '安全修复：一次性安全模式部分恢复失败时保留 journal，不再删除恢复证据。',
@@ -2610,7 +2611,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 'One-shot safe mode writes disable markers immediately, effective on next boot. Confirm before arming.',
                 'If issues occur after an update, uninstall the module (which fully cleans state and persist dirs) then reinstall.',
             ]},
-            { title: '✨ v3.5.4 New & Fixed', items: [
+            { title: '✨ v3.5.5 New & Fixed', items: [
                 'Fixed: Slow boot no longer leaves stale BOOTING state causing false rescue triggers.',
                 'Fixed: Update-time integrity false positives caused by an old daemon and runtime metadata changes.',
                 'Fixed: Full rescue must verify disable markers are actually written before committing success.',
@@ -2726,7 +2727,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
             try { localStorage.setItem('rescuex_onboarding_notice_ack', contentHash); } catch (_) {}
             if (timer) { clearInterval(timer); timer = null; }
             overlay.remove();
-            this.toast(isZh ? '欢迎使用 RescueX v3.5.4' : 'Welcome to RescueX v3.5.4', 'success');
+            this.toast(isZh ? '欢迎使用 RescueX v3.5.5' : 'Welcome to RescueX v3.5.5', 'success');
         };
 
         updateButton();
@@ -3488,7 +3489,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         }
     }
 
-    // === v3.5.4: diagnostics and one-shot safe mode ===
+    // === v3.5.5: diagnostics and one-shot safe mode ===
     v35Command(functionName) {
         const allowed = new Set([
             'v35_simulate_rescue', 'v35_one_shot_status',
@@ -3527,7 +3528,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
     }
 
     async v35ArmOneShotSafeMode() {
-        // v3.5.4: Show a dry-run diff preview before the user confirms.
+        // v3.5.5: Show a dry-run diff preview before the user confirms.
         this.showLoading(true);
         let preview = '';
         try {
@@ -3540,7 +3541,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         const message = this.lang === 'zh'
             ? `将立即写入本次事务涉及模块的禁用标记，下一次启动进入安全模式；成功启动后仅按事务清单恢复。不会触碰白名单或原先已禁用模块。\n\n=== 变更预览 ===\n${diffSummary}\n\n是否确认执行？`
             : `This writes disable markers for this transaction now, starts the next boot in safe mode, and restores only markers recorded in its journal after a successful boot. Whitelisted and previously disabled modules are untouched.\n\n=== Change Preview ===\n${diffSummary}\n\nConfirm and execute?`;
-        // v3.5.4: Double confirmation for danger operations.
+        // v3.5.5: Double confirmation for danger operations.
         if (!await this.confirmDialog(this.t('confirm_title'), message, this.t('btn_confirm'), 'btn-danger')) return;
         const finalMsg = this.lang === 'zh'
             ? '这是高风险操作：写入的禁用标记将在下次启动生效。确定要继续吗？'
@@ -3600,7 +3601,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 this.toast(this.lang === 'zh'
                     ? `诊断包已生成（${ext}）${path ? '，路径: ' + path : ''}`
                     : `Diagnostic bundle created (${ext})${path ? ', path: ' + path : ''}`, 'success', 6000);
-                // v3.5.4: Offer to open a pre-filled GitHub Issue draft.
+                // v3.5.5: Offer to open a pre-filled GitHub Issue draft.
                 const issueMsg = this.lang === 'zh'
                     ? '是否打开 GitHub Issue 草稿页面？诊断包不会被自动上传，你需要手动决定是否附加文件。'
                     : 'Open a pre-filled GitHub Issue draft? The diagnostic bundle will NOT be auto-uploaded; you decide whether to attach it.';
@@ -3633,7 +3634,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         this.showLoading(false);
     }
 
-    // === v3.0.1: APP 解冻 (v3.5.4: 使用 execStrict 区分拒绝/失败/无项目) ===
+    // === v3.0.1: APP 解冻 (v3.5.5: 使用 execStrict 区分拒绝/失败/无项目) ===
     async unfreezeApps() {
         const confirm = await this.confirmDialog(
             this.t('confirm_title'),
@@ -3666,7 +3667,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
 
     // === v3.0.1: 锁定脚本目录 ===
     // === Modal ===
-    // v3.5.4: default focus is Cancel (not OK). Danger dialogs use Escape/Enter
+    // v3.5.5: default focus is Cancel (not OK). Danger dialogs use Escape/Enter
     // to dismiss, never to confirm. Focus is trapped inside the overlay.
     confirmDialog(title, message, okText, okClass) {
         return new Promise(resolve => {
@@ -3720,13 +3721,13 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                     else ok.focus();
                 }
             };
-            // v3.5.4: default focus is Cancel, not OK.
+            // v3.5.5: default focus is Cancel, not OK.
             setTimeout(() => cancel.focus(), 50);
         });
     }
 }
 
-// v3.5.4: Restore instantiation that was accidentally removed.
+// v3.5.5: Restore instantiation that was accidentally removed.
 window.RescueXUI = RescueXUI;
 
 if (document.readyState === 'loading') {

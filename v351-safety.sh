@@ -27,20 +27,39 @@ rx_config_migrate_runtime() {
     while IFS='|' read -r key value; do
         grep -q "^${key}=" "$tmp" 2>/dev/null || { printf '%s=%s\n' "$key" "$value" >> "$tmp"; changed=1; }
     done <<'RX_DEFAULTS'
-BOOT_TIMEOUT_ADAPTIVE=true
-BOOT_TIMEOUT_MIN_SEC=90
-BOOT_TIMEOUT_MAX_SEC=1200
-BOOT_TIMEOUT_HISTORY_SIZE=5
-WATCHDOG_ENGINE=shell
-WATCHDOG_HEALTH_GRACE_SEC=30
-PATCH_FLAG_TTL_SEC=1800
-INTEGRITY_CHECK_ENABLED=true
+BOOT_TIMEOUT_ADAPTIVE|true
+BOOT_TIMEOUT_MIN_SEC|90
+BOOT_TIMEOUT_MAX_SEC|1200
+BOOT_TIMEOUT_HISTORY_SIZE|5
+WATCHDOG_ENGINE|shell
+WATCHDOG_HEALTH_GRACE_SEC|30
+PATCH_FLAG_TTL_SEC|1800
+INTEGRITY_CHECK_ENABLED|true
 RX_DEFAULTS
     chmod 0600 "$tmp" 2>/dev/null
     sync "$tmp" 2>/dev/null
     mv "$tmp" "$CONF_FILE" || { rm -f "$tmp"; return 1; }
     chmod 0600 "$CONF_FILE" 2>/dev/null
     log "[CONFIG] 已迁移到 schema=${RX_CONFIG_SCHEMA_VERSION}${changed:+ 并补全缺失字段}"
+    return 0
+}
+
+# Repair only the watchdog key. Older v3.5.4 builds could append malformed
+# duplicate lines such as WATCHDOG_ENGINE=shell= during schema migration.
+# Keep the last valid user value, remove all duplicates, and mirror it.
+rx_config_repair_watchdog_engine() {
+    [ -f "$CONF_FILE" ] || return 0
+    local configured tmp
+    configured=$(awk -F= '$1 == "WATCHDOG_ENGINE" && NF == 2 && ($2 == "native" || $2 == "shell") { value=$2 } END { print value }' "$CONF_FILE" 2>/dev/null)
+    case "$configured" in native|shell) ;; *) configured=shell ;; esac
+    tmp="${CONF_FILE}.watchdog.$$"
+    awk -F= '$1 != "WATCHDOG_ENGINE" { print }' "$CONF_FILE" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+    printf 'WATCHDOG_ENGINE=%s\n' "$configured" >> "$tmp" || { rm -f "$tmp"; return 1; }
+    chmod 0600 "$tmp" 2>/dev/null
+    sync "$tmp" 2>/dev/null
+    mv -f "$tmp" "$CONF_FILE" 2>/dev/null || { rm -f "$tmp"; return 1; }
+    chmod 0600 "$CONF_FILE" 2>/dev/null
+    sync_config_to_persist 2>/dev/null || true
     return 0
 }
 
@@ -57,6 +76,10 @@ read_config() {
     PATCH_FLAG_TTL_SEC=1800
     WATCHDOG_HEALTH_GRACE_SEC=30
     APP_UNFREEZE_MANUAL_ENABLED=false
+    if [ "${RESCUEX_READ_ONLY:-false}" != true ]; then
+        rx_config_migrate_runtime || log "[CONFIG] 警告：运行时 schema 迁移失败，继续使用内存安全默认值"
+        rx_config_repair_watchdog_engine || log "[CONFIG] 警告：WATCHDOG_ENGINE 修复失败，继续使用安全默认值"
+    fi
     [ -f "$CONF_FILE" ] && {
         local k v
         while IFS='=' read -r k v; do
@@ -66,7 +89,9 @@ read_config() {
                 BOOT_TIMEOUT_MIN_SEC) BOOT_TIMEOUT_MIN_SEC="$v" ;;
                 BOOT_TIMEOUT_MAX_SEC) BOOT_TIMEOUT_MAX_SEC="$v" ;;
                 BOOT_TIMEOUT_HISTORY_SIZE) BOOT_TIMEOUT_HISTORY_SIZE="$v" ;;
-                WATCHDOG_ENGINE) WATCHDOG_ENGINE="$v" ;;
+                WATCHDOG_ENGINE)
+                    case "$v" in native|shell) WATCHDOG_ENGINE="$v" ;; esac
+                    ;;
                 PATCH_FLAG_TTL_SEC) PATCH_FLAG_TTL_SEC="$v" ;;
                 WATCHDOG_HEALTH_GRACE_SEC) WATCHDOG_HEALTH_GRACE_SEC="$v" ;;
                 APP_UNFREEZE_MANUAL_ENABLED) APP_UNFREEZE_MANUAL_ENABLED="$v" ;;
@@ -92,11 +117,6 @@ read_config() {
     BOOT_TIMEOUT_ADAPTIVE=$(rx_bool "$BOOT_TIMEOUT_ADAPTIVE")
     case "$WATCHDOG_ENGINE" in native|shell) ;; *) WATCHDOG_ENGINE=shell ;; esac
     APP_UNFREEZE_MANUAL_ENABLED=false
-    # Read-only inspectors (notably v35_simulate_rescue) must not migrate or
-    # rewrite the persisted config merely by asking for a preview.
-    if [ "${RESCUEX_READ_ONLY:-false}" != true ]; then
-        rx_config_migrate_runtime || log "[CONFIG] 警告：运行时 schema 迁移失败，继续使用内存安全默认值"
-    fi
 }
 
 rx_boot_history_file() { printf '%s' "$STATE_DIR/boot_duration_history"; }

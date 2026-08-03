@@ -84,4 +84,21 @@ engine_status=$(get_watchdog_engine_status)
 printf '%s\n' "$engine_status" | grep -q '^CONFIGURED=native$'
 printf '%s\n' "$engine_status" | grep -q '^EFFECTIVE=shell$'
 ok 'native backend remains fail-safe with Shell fallback'
+# 10: v3.5.4 malformed migration lines must be repaired without losing Native.
+CFG_TEST_DIR="$TD/config-test"; mkdir -p "$CFG_TEST_DIR" "$TD/config-persist"
+STATE_DIR="$CFG_TEST_DIR"; CONF_FILE="$CFG_TEST_DIR/config.conf"; PERSIST_DIR="$TD/config-persist"
+printf 'WATCHDOG_ENGINE=native\nCONFIG_SCHEMA_VERSION=0\n' > "$CONF_FILE"
+read_config
+[ "$WATCHDOG_ENGINE" = native ] || { echo 'native config was not preserved' >&2; exit 1; }
+[ "$(grep -c '^WATCHDOG_ENGINE=' "$CONF_FILE")" -eq 1 ] || exit 1
+[ "$(grep -c '^WATCHDOG_ENGINE=' "$PERSIST_DIR/config.conf")" -eq 1 ] || exit 1
+grep -q '^WATCHDOG_ENGINE=native$' "$PERSIST_DIR/config.conf"
+ok 'native config survives malformed migration and mirror sync'
+# The exact old malformed duplicate must not override the valid Native choice.
+printf 'WATCHDOG_ENGINE=native\nCONFIG_SCHEMA_VERSION=3\nWATCHDOG_ENGINE=shell=\n' > "$CONF_FILE"
+read_config
+[ "$WATCHDOG_ENGINE" = native ] || exit 1
+[ "$(grep -c '^WATCHDOG_ENGINE=' "$CONF_FILE")" -eq 1 ] || exit 1
+grep -q '^WATCHDOG_ENGINE=native$' "$CONF_FILE"
+ok 'malformed duplicate does not downgrade Native'
 printf 'all %s safety tests passed\n' "$pass"

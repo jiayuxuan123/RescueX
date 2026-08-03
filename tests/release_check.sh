@@ -43,6 +43,10 @@ grep -q 'id=\"cfg-watchdog-engine\"' webroot/index.html
 grep -q 'watchdog-engine-choice' webroot/index.html
 grep -q 'checked ? .native. : .shell.' webroot/script.js
 grep -q 'WATCHDOG_ENGINE=${watchdogEngine}' webroot/script.js
+grep -q 'sync_config_to_persist' common.sh
+grep -q 'rx_config_repair_watchdog_engine' v351-safety.sh
+grep -q 'preserve_watchdog_engine_choice' customize.sh
+grep -q 'rescuex_data/config.conf' webroot/script.js
 grep -q 'get_watchdog_engine_status' v351-safety.sh
 grep -q 'WATCHDOG_ENGINE=shell' customize.sh
 grep -q "data-action=\"runIntegrityCheck\"" webroot/index.html

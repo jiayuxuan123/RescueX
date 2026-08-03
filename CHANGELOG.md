@@ -1,3 +1,11 @@
+# v3.5.5（Native 看门狗配置重启持久化热修复）
+
+- 修复 v3.5.4 配置 schema 迁移使用错误分隔符，避免生成 `WATCHDOG_ENGINE=shell=` 畸形重复项。
+- 启动时自动清理旧版畸形/重复 Native 配置，保留有效的用户选择。
+- WebUI 保存和导入配置同时原子写入模块状态目录与 `/data/adb/rescuex_data`。
+- 升级时协调旧模块目录和外部持久目录的看门狗选择，避免 stale Shell 覆盖 Native。
+- Native 自检失败仍只做运行时 Shell 回退，不会修改用户配置。
+
 # v3.5.4（原生看门狗前端开关）
 
 - WebUI“救砖参数”新增看门狗后端选择：Shell（兼容模式） / Native（原生模式）。

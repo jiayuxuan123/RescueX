@@ -7,7 +7,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.5.4"
+RX_VERSION="v3.5.5"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -104,7 +104,7 @@ CONFIG_PRESERVED=false
 WHITELIST_PRESERVED=false
 IS_UPGRADE=false
 
-# v3.5.4: an old integrity daemon must be stopped before the module directory
+# v3.5.5: an old integrity daemon must be stopped before the module directory
 # is replaced. Otherwise it can hash a half-updated tree and overwrite the new
 # integrity status with a false COMPROMISED result.
 stop_previous_integrity_daemon() {
@@ -203,6 +203,32 @@ if [ "$CONFIG_PRESERVED" != "true" ] && [ -d "$PERSIST_DIR" ]; then
         prune_manual_snapshots_dir "$SNAPSHOT_DIR"
     fi
 fi
+
+# v3.5.5: reconcile the watchdog choice across old module state and the
+# external persistence mirror. If either preserved copy explicitly requested
+# Native, do not silently downgrade it because the other copy is stale Shell.
+preserve_watchdog_engine_choice() {
+    local source value native_seen=0 tmp
+    for source in "$OLD_STATE_DIR/config.conf" "$PERSIST_DIR/config.conf" "$STATE_DIR/config.conf"; do
+        [ -f "$source" ] || continue
+        value=$(awk -F= '$1 == "WATCHDOG_ENGINE" && NF == 2 && ($2 == "native" || $2 == "shell") { v=$2 } END { print v }' "$source" 2>/dev/null)
+        [ "$value" = native ] && native_seen=1
+    done
+    [ -f "$STATE_DIR/config.conf" ] || return 0
+    tmp="$STATE_DIR/config.conf.engine.$$"
+    awk -F= '$1 != "WATCHDOG_ENGINE" { print }' "$STATE_DIR/config.conf" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+    if [ "$native_seen" -eq 1 ]; then
+        printf 'WATCHDOG_ENGINE=native\n' >> "$tmp"
+    else
+        printf 'WATCHDOG_ENGINE=shell\n' >> "$tmp"
+    fi
+    chmod 0600 "$tmp" 2>/dev/null
+    sync "$tmp" 2>/dev/null
+    mv -f "$tmp" "$STATE_DIR/config.conf" 2>/dev/null || { rm -f "$tmp"; return 1; }
+    chmod 0600 "$STATE_DIR/config.conf" 2>/dev/null
+    return 0
+}
+preserve_watchdog_engine_choice || ui_print "! 看门狗后端配置协调失败，将使用安全默认值"
 
 # === 写入默认配置（仅在未保留时）===
 if [ "$CONFIG_PRESERVED" != "true" ]; then
@@ -351,7 +377,7 @@ set_perm "$MODPATH/uninstall.sh"     0 0 0700
 set_perm "$MODPATH/action.sh"        0 0 0700
 set_perm "$MODPATH/customize.sh"     0 0 0700
 set_perm "$MODPATH/module.prop" 0 0 0644
-# v3.5.4: remove the obsolete backup that could roll metadata back after an overlay update.
+# v3.5.5: remove the obsolete backup that could roll metadata back after an overlay update.
 rm -f "$MODPATH/module.prop.bak" "$MODPATH/module.prop.tmp."* 2>/dev/null
 set_perm "$MODPATH/README.md" 0 0 0644
 set_perm "$MODPATH/LICENSE"  0 0 0644

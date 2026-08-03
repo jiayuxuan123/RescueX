@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.4"
-RX_VERSION_CODE=35004
+RX_VERSION="v3.5.5"
+RX_VERSION_CODE=35005
 
 # ============================================================
 # 路径初始化
@@ -157,6 +157,21 @@ log() {
 # 持久化同步（v2.7.0 新增）
 # 关键数据同步到模块外部目录，模块更新/重装后自动恢复
 # ============================================================
+
+# 只同步配置到模块外持久目录；供 WebUI 保存和启动迁移使用。
+# 配置是用户选择的权威输入，写入必须与模块内副本同样原子。
+sync_config_to_persist() {
+    local tmp="${PERSIST_DIR}/config.conf.tmp.$$"
+    [ -f "$CONF_FILE" ] || return 1
+    mkdir -p "$PERSIST_DIR" 2>/dev/null || return 1
+    umask 077
+    cat "$CONF_FILE" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+    chmod 0600 "$tmp" 2>/dev/null
+    sync "$tmp" 2>/dev/null
+    mv -f "$tmp" "$PERSIST_DIR/config.conf" 2>/dev/null || { rm -f "$tmp"; return 1; }
+    chmod 0600 "$PERSIST_DIR/config.conf" 2>/dev/null
+    return 0
+}
 
 # 同步关键持久数据到外部目录（模块更新时不会丢失）
 sync_to_persist() {
