@@ -101,4 +101,14 @@ read_config
 [ "$(grep -c '^WATCHDOG_ENGINE=' "$CONF_FILE")" -eq 1 ] || exit 1
 grep -q '^WATCHDOG_ENGINE=native$' "$CONF_FILE"
 ok 'malformed duplicate does not downgrade Native'
+# 12: startup self-heals an installer-stripped 0644 native binary.
+PERM_MOD="$TD/permission-mod"; mkdir -p "$PERM_MOD/webroot/arm64-v8a"
+PERM_BIN="$PERM_MOD/webroot/arm64-v8a/rescuex-watchdog"
+printf '#!/bin/sh\nexit 0\n' > "$PERM_BIN"
+chmod 0644 "$PERM_BIN"
+MODDIR="$PERM_MOD"
+ensure_watchdog_executable
+[ -x "$PERM_BIN" ] || exit 1
+[ "$(stat -c '%a' "$PERM_BIN")" = 755 ] || exit 1
+ok 'startup repairs installer-stripped native execute bit'
 printf 'all %s safety tests passed\n' "$pass"

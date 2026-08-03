@@ -178,11 +178,21 @@ get_effective_boot_timeout() {
 # The native binary is deliberately optional. A prebuilt is used only after
 # architecture, execute bit and launcher self-test pass; otherwise shell stays
 # authoritative. Native binary invokes watchdog.sh once at its deadline.
+# v3.5.6: KSU-compatible installers may unpack the binary as 0644 even when
+# the ZIP entry is 0755. Repair the exact module-owned file before checking or
+# launching it; a noexec mount still fails later at the real self-test.
+ensure_watchdog_executable() {
+    local bin="$MODDIR/webroot/arm64-v8a/rescuex-watchdog"
+    [ -f "$bin" ] || return 1
+    chmod 0755 "$bin" 2>/dev/null || true
+    [ -x "$bin" ]
+}
+
 get_watchdog_engine() {
     local bin="$MODDIR/webroot/arm64-v8a/rescuex-watchdog"
     [ "$WATCHDOG_ENGINE" = native ] || { printf shell; return 0; }
     [ "$(getprop ro.product.cpu.abi 2>/dev/null)" = arm64-v8a ] || { printf shell; return 0; }
-    [ -x "$bin" ] || { printf shell; return 0; }
+    ensure_watchdog_executable || { printf shell; return 0; }
     "$bin" --self-test >/dev/null 2>&1 || { printf shell; return 0; }
     printf native
 }
@@ -197,7 +207,7 @@ get_watchdog_engine_status() {
             reason=not_arm64
         elif [ ! -e "$bin" ]; then
             reason=missing_binary
-        elif [ ! -x "$bin" ]; then
+        elif ! ensure_watchdog_executable; then
             reason=not_executable
         elif ! "$bin" --self-test >/dev/null 2>&1; then
             reason=self_test_failed

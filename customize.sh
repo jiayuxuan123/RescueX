@@ -7,7 +7,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.5.5"
+RX_VERSION="v3.5.6"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -104,7 +104,7 @@ CONFIG_PRESERVED=false
 WHITELIST_PRESERVED=false
 IS_UPGRADE=false
 
-# v3.5.5: an old integrity daemon must be stopped before the module directory
+# v3.5.6: an old integrity daemon must be stopped before the module directory
 # is replaced. Otherwise it can hash a half-updated tree and overwrite the new
 # integrity status with a false COMPROMISED result.
 stop_previous_integrity_daemon() {
@@ -204,7 +204,7 @@ if [ "$CONFIG_PRESERVED" != "true" ] && [ -d "$PERSIST_DIR" ]; then
     fi
 fi
 
-# v3.5.5: reconcile the watchdog choice across old module state and the
+# v3.5.6: reconcile the watchdog choice across old module state and the
 # external persistence mirror. If either preserved copy explicitly requested
 # Native, do not silently downgrade it because the other copy is stale Shell.
 preserve_watchdog_engine_choice() {
@@ -377,12 +377,16 @@ set_perm "$MODPATH/uninstall.sh"     0 0 0700
 set_perm "$MODPATH/action.sh"        0 0 0700
 set_perm "$MODPATH/customize.sh"     0 0 0700
 set_perm "$MODPATH/module.prop" 0 0 0644
-# v3.5.5: remove the obsolete backup that could roll metadata back after an overlay update.
+# v3.5.6: remove the obsolete backup that could roll metadata back after an overlay update.
 rm -f "$MODPATH/module.prop.bak" "$MODPATH/module.prop.tmp."* 2>/dev/null
 set_perm "$MODPATH/README.md" 0 0 0644
 set_perm "$MODPATH/LICENSE"  0 0 0644
 set_perm "$MODPATH/webroot"           0 0 0755
 set_perm "$MODPATH/webroot/arm64-v8a" 0 0 0755
+# v3.5.6: some KSU-compatible installers do not preserve the ZIP file mode.
+# Set the executable bit on the native file itself, not only its directory.
+set_perm "$MODPATH/webroot/arm64-v8a/rescuex-watchdog" 0 0 0755
+chmod 0755 "$MODPATH/webroot/arm64-v8a/rescuex-watchdog" 2>/dev/null
 set_perm "$MODPATH/webroot/assets"    0 0 0755
 set_perm "$MODPATH/webroot/index.html" 0 0 0644
 set_perm "$MODPATH/webroot/style.css"        0 0 0644

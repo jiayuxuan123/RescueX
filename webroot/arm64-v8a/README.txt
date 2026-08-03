@@ -1,6 +1,6 @@
 # RescueX arm64-v8a native watchdog
 
-本目录包含 v3.5.5 随包发布的 `rescuex-watchdog` Android arm64-v8a PIE 二进制。
+本目录包含 v3.5.6 随包发布的 `rescuex-watchdog` Android arm64-v8a PIE 二进制。
 
 - 编译器：Android NDK r27c / Clang 18
 - 最低 API：26

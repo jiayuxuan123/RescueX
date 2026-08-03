@@ -48,6 +48,9 @@ grep -q 'rx_config_repair_watchdog_engine' v351-safety.sh
 grep -q 'preserve_watchdog_engine_choice' customize.sh
 grep -q 'rescuex_data/config.conf' webroot/script.js
 grep -q 'get_watchdog_engine_status' v351-safety.sh
+grep -q 'ensure_watchdog_executable' v351-safety.sh
+grep -q 'set_perm "$MODPATH/webroot/arm64-v8a/rescuex-watchdog" 0 0 0755' customize.sh
+grep -q 'chmod 0755 "$MODPATH/webroot/arm64-v8a/rescuex-watchdog"' customize.sh
 grep -q 'WATCHDOG_ENGINE=shell' customize.sh
 grep -q "data-action=\"runIntegrityCheck\"" webroot/index.html
 grep -q "'runIntegrityCheck'" webroot/script.js

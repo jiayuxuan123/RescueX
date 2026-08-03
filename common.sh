@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.5"
-RX_VERSION_CODE=35005
+RX_VERSION="v3.5.6"
+RX_VERSION_CODE=35006
 
 # ============================================================
 # 路径初始化
