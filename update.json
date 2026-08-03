@@ -1,6 +1,7 @@
 {
-  "version": "v3.5.0",
-  "versionCode": 35000,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.0/RescueX-v3.5.0.zip",
-  "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md"
+  "version": "v3.5.1",
+  "versionCode": 35001,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.1/RescueX-v3.5.1.zip",
+  "changelog": "安全热修复：Bridge 严格结果协议、状态机假成功修复、配置原子导入、深色模式、原生看门狗接口、自适应超时、差异预览与二次确认",
+  "sha256": "fee2a82c0bb9ba80877e12b429c704dc412ce4cba4de4a1e07cdfdfb549978df"
 }

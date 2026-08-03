@@ -1440,3 +1440,29 @@ input[type="number"], input[type="text"] { min-height: 44px; border-radius: 6px;
     .status-value { font-size: 23px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } }
+
+/* === v3.5.1 Dark Mode (system-following, opt-in via OS setting) === */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --rx-bg: #1a1a2e;
+        --rx-surface: #232338;
+        --rx-surface-strong: #2d2d44;
+        --rx-ink: #e4e4ef;
+        --rx-muted: #9999b0;
+        --rx-border: #3a3a52;
+        --rx-action: #5b9aff;
+        --rx-action-fg: #ffffff;
+        --rx-success: #4ade80;
+        --rx-warning: #fbbf24;
+        --rx-danger: #f87171;
+        --rx-status-bar: #2d2d44;
+    }
+    body { background: var(--rx-bg); color: var(--rx-ink); }
+    .card, .modal, .appbar { background: var(--rx-surface); border-color: var(--rx-border); }
+    .btn-text { color: var(--rx-muted); }
+    .btn-filled { background: var(--rx-action); color: var(--rx-action-fg); }
+    .btn-danger { background: var(--rx-danger); color: #fff; }
+    input, select, textarea { background: var(--rx-surface-strong); color: var(--rx-ink); border-color: var(--rx-border); }
+    .stat-row, .info-item { border-color: var(--rx-border); }
+    .modal-overlay { background: rgba(0,0,0,0.6); }
+}

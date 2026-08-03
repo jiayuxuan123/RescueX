@@ -64,41 +64,20 @@ else
     fi
 fi
 
-# === 2. 彻底清理所有临时文件 ===
+# === 2. 彻底清理所有状态文件（含 v35 和 v3.5.1 新增）===
 if [ -d "$STATE_DIR" ]; then
-    rm -f "$STATE_DIR/.boot_status.tmp"
-    rm -f "$STATE_DIR/.boot_status.tmp."*
-    rm -f "$STATE_DIR/boot_status.json.tmp"
-    rm -f "$STATE_DIR/boot_status.json.tmp."*
-    rm -f "$STATE_DIR/boot_status.json"
-    rm -f "$STATE_DIR/watchdog_pid"
-    rm -f "$STATE_DIR/.modules_list"*
-    rm -f "$STATE_DIR/.config_snapshot.sh"
-    rm -f "$STATE_DIR/.watchdog_lib.sh"
-    rm -f "$STATE_DIR/.watchdog_runner.sh"
-    rm -f "$STATE_DIR/.service_started_flag"
-    rm -f "$STATE_DIR/.rescue_count_new"
-    rm -f "$STATE_DIR/rescue.log.tmp"
-    rm -f "$STATE_DIR/boot_history.tmp"
-    rm -f "$STATE_DIR/.report.tmp"
-    rm -f "$STATE_DIR/first_run"
-    rm -f "$STATE_DIR/onboarding_ack"
-    rm -f "$STATE_DIR/.dd_timeout_"*
-    rm -f "$STATE_DIR/rescued_disabled.list"
-    rm -f "$STATE_DIR/rescue_audit.log"
-    rm -f "$STATE_DIR/good_modules.list"
-    rm -f "$STATE_DIR/suspect_modules.log"
-    rm -f "$STATE_DIR/rescue_level"
-
-    rm -rf "$STATE_DIR/snapshots"
+    # v3.5.1: 不再逐个列文件，直接递归删除整个 STATE_DIR，
+    # 确保不遗漏任何新增的状态文件或子目录（v35/、health.d/、snapshot-meta/ 等）。
     rm -rf "$STATE_DIR"
-    echo "- 状态数据已清理"
+    echo "- 状态数据已清理（含 v35 子目录）"
 fi
 
-# === 3. 清理持久化目录 ===
+# === 3. 彻底清理持久化目录 ===
+# PERSIST_DIR 是跨更新保存状态的目录；如果不清，覆盖安装时
+# customize.sh 会把旧状态恢复回来，导致旧 bug 无法通过更新消除。
 if [ -d "/data/adb/rescuex_data" ]; then
     rm -rf "/data/adb/rescuex_data"
-    echo "- 持久化数据已清理"
+    echo "- 持久化数据已清理（/data/adb/rescuex_data）"
 fi
 
 # === 4. 清理其他临时位置 ===

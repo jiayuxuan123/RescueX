@@ -146,10 +146,21 @@ mark_service_started
 log "===== RescueX $RX_VERSION service 启动 ====="
 v35_health_touch service running "waiting_for_boot_completed"
 
-# 2. 等待系统真正完成启动（带 300 秒超时）
+# 2. 等待系统真正完成启动。必须与 post-fs-data 的实际看门狗窗口
+# 保持一致：普通启动使用经上下限约束的历史自适应值，OTA/补丁使用
+# 专用窗口；避免 service 在 300 秒先退出并制造遗留 BOOTING。
 WAIT_SEC=0
-WAIT_MAX=300
+WAIT_MAX="$(get_effective_boot_timeout)"
+if grep -q '^OTA_DETECTED=true$' "$STATUS_FILE" 2>/dev/null; then
+    WAIT_MAX="$OTA_TIMEOUT_SEC"
+elif grep -q '^PATCH_DETECTED=true$' "$STATUS_FILE" 2>/dev/null; then
+    WAIT_MAX="$PATCH_UPDATE_TIMEOUT_SEC"
+fi
+case "$WAIT_MAX" in ''|*[!0-9]*) WAIT_MAX=300 ;; esac
+[ "$WAIT_MAX" -lt 60 ] 2>/dev/null && WAIT_MAX=60
+[ "$WAIT_MAX" -gt 1800 ] 2>/dev/null && WAIT_MAX=1800
 FAST_POLL_SEC=15
+log "service 等待 boot_completed，窗口=${WAIT_MAX}s"
 _boot_done=0
 until [ "$_boot_done" = "1" ]; do
     if [ "$(getprop sys.boot_completed 2>/dev/null)" = "1" ] \
@@ -206,6 +217,8 @@ if [ -f "$STATUS_FILE" ]; then
 fi
 
 if [ "$BOOT_DURATION" -gt 0 ]; then
+    # 仅成功提交后的合理 uptime 耗时进入移动平均，避免故障/时钟异常污染。
+    record_boot_duration "$BOOT_DURATION" || log "警告：启动耗时历史写入失败"
     log "本次启动耗时: ${BOOT_DURATION} 秒 (uptime 法, 不依赖 RTC)"
 else
     log "本次启动耗时: 未能计算 (uptime_start=0 或异常)"

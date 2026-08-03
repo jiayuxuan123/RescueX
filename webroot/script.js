@@ -1,4 +1,4 @@
-/* RescueX v3.5.0 - WebUI 控制器
+/* RescueX v3.5.1 - WebUI 控制器
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -12,8 +12,8 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.5.0';
-const APP_VERSION_CODE = 35000;
+const APP_VERSION = 'v3.5.1';
+const APP_VERSION_CODE = 35001;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -892,7 +892,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.0' : 'Automatic Boot Rescue v3.5.0';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.1' : 'Automatic Boot Rescue v3.5.1';
     }
 
     openExternal(url) {
@@ -986,7 +986,9 @@ done`;
     }
 
     // === 桥接执行（统一 KSU / Magisk v27）===
-    exec(cmd, timeoutMs = EXEC_DEFAULT_TIMEOUT_MS) {
+    // v3.5.1: execStrict preserves exit code, timeout and exception state.
+    // The legacy exec() wrapper remains for read-only calls that only need stdout.
+    execStrict(cmd, timeoutMs = EXEC_DEFAULT_TIMEOUT_MS) {
         return new Promise(resolve => {
             const cb = `_rx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
             let done = false;
@@ -994,30 +996,31 @@ done`;
                 if (done) return;
                 done = true;
                 delete window[cb];
-                resolve('');
+                resolve({ ok: false, code: -1, stdout: '', timedOut: true, errorKind: 'timeout' });
             }, timeoutMs);
             window[cb] = (code, out) => {
                 if (done) return;
                 done = true;
                 clearTimeout(timer);
                 delete window[cb];
-                resolve((out || '').trim());
+                const rc = parseInt(code, 10);
+                resolve({ ok: rc === 0, code: isNaN(rc) ? -1 : rc, stdout: (out || '').trim(), timedOut: false, errorKind: null });
             };
             try {
-                // KSU: ksu.exec(cmd, "{}", cb)  Magisk: magisk.exec(cmd, cb)
-                if (this.isKsu) {
-                    this.bridge.exec(cmd, '{}', cb);
-                } else {
-                    this.bridge.exec(cmd, cb);
-                }
+                if (this.isKsu) { this.bridge.exec(cmd, '{}', cb); }
+                else { this.bridge.exec(cmd, cb); }
             } catch (e) {
                 if (done) return;
                 done = true;
                 clearTimeout(timer);
                 delete window[cb];
-                resolve('');
+                resolve({ ok: false, code: -1, stdout: '', timedOut: false, errorKind: 'exception' });
             }
         });
+    }
+
+    exec(cmd, timeoutMs = EXEC_DEFAULT_TIMEOUT_MS) {
+        return this.execStrict(cmd, timeoutMs).then(r => r.stdout);
     }
 
     setupWorkspaceShell() {
@@ -1853,8 +1856,8 @@ mv config.conf.tmp.$$ config.conf
                 this.toast(this.t('export_failed'), 'error');
                 return;
             }
-            const result = await this.exec(`mkdir -p /sdcard/Download && printf '%s' '${b64}' | base64 -d > '${filepath}' && echo OK`);
-            if (result.includes('OK')) {
+            const r = await this.execStrict(`mkdir -p /sdcard/Download && printf '%s' '${b64}' | base64 -d > '${filepath}' && echo OK`);
+            if (r.ok && r.stdout.includes('OK')) {
                 await this.exec(`am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file://'${filepath}' 2>/dev/null`);
                 this.toast((this.lang === 'zh' ? '配置已保存到 ' : 'Config saved to ') + filepath, 'success', 5000);
             } else {
@@ -1866,8 +1869,8 @@ mv config.conf.tmp.$$ config.conf
     }
 
     async importConfig() {
-        // v2.4: WebUI 容器 <input type=file> 可能不工作
-        // 改为从 /sdcard/Download/rescuex-config.json 读取
+        // v3.5.1: Atomic import. Write to temp files, validate, then rename.
+        // If either file fails, neither is committed.
         const filepath = '/sdcard/Download/rescuex-config.json';
         const confirm = await this.confirmDialog(
             this.t('import_config'),
@@ -1879,46 +1882,34 @@ mv config.conf.tmp.$$ config.conf
         if (!confirm) return;
 
         try {
-            const text = await this.exec(`cat '${filepath}' 2>/dev/null`);
-            if (!text) {
-                this.toast(this.lang === 'zh' ? `未找到 ${filepath}` : `Not found: ${filepath}`, 'error');
+            const readR = await this.execStrict(`cat '${filepath}' 2>/dev/null`);
+            if (!readR.ok || !readR.stdout) {
+                this.toast(this.lang === 'zh' ? `未找到或读取失败: ${filepath}` : `Not found or read failed: ${filepath}`, 'error');
                 return;
             }
+            const text = readR.stdout;
             let data;
-            try {
-                data = JSON.parse(text);
-            } catch (e) {
-                this.toast(this.t('config_import_failed'), 'error');
-                return;
-            }
+            try { data = JSON.parse(text); }
+            catch (e) { this.toast(this.t('config_import_failed'), 'error'); return; }
             if (!data.config || typeof data.config !== 'object') {
                 this.toast(this.t('config_import_failed'), 'error');
                 return;
             }
-            // v2.5 修复 Issue 4：字段级校验 + 范围 clamp，避免导入任意值的配置
             const cfg = data.config;
             const clamped = this._validateAndClampConfig(cfg);
             const lines = [];
-            Object.keys(clamped).forEach(k => {
-                lines.push(`${k}=${clamped[k]}`);
-            });
+            Object.keys(clamped).forEach(k => { lines.push(`${k}=${clamped[k]}`); });
             lines.push('');
             const configContent = lines.join('\n');
             const configB64 = utf8ToBase64(configContent);
-            if (!/^[A-Za-z0-9+/=]*$/.test(configB64)) {
-                this.toast(this.t('config_import_failed'), 'error');
-                return;
-            }
-            const result1 = await this.exec(`printf '%s' '${configB64}' | base64 -d > "${this.confFile}" && echo OK`);
+            if (!/^[A-Za-z0-9+/=]*$/.test(configB64)) { this.toast(this.t('config_import_failed'), 'error'); return; }
 
-            // 白名单（同样做字符校验）
-            let result2 = 'OK';
+            // Prepare whitelist content
+            let wlB64 = null;
             if (data.whitelist) {
-                // 仅允许字母数字 . _ - 和换行/注释
                 const safeWl = String(data.whitelist)
                     .split('\n')
                     .map(l => {
-                        // 保留注释行
                         const hashIdx = l.indexOf('#');
                         const comment = hashIdx >= 0 ? l.substring(hashIdx) : '';
                         const content = hashIdx >= 0 ? l.substring(0, hashIdx) : l;
@@ -1927,20 +1918,38 @@ mv config.conf.tmp.$$ config.conf
                     })
                     .filter(l => l)
                     .join('\n');
-                const b64 = utf8ToBase64(safeWl + '\n');
-                if (/^[A-Za-z0-9+/=]*$/.test(b64)) {
-                    result2 = await this.exec(`printf '%s' '${b64}' | base64 -d > "${this.whitelistFile}" && echo OK`);
-                } else {
-                    result2 = '';
-                }
+                wlB64 = utf8ToBase64(safeWl + '\n');
+                if (!/^[A-Za-z0-9+/=]*$/.test(wlB64)) { this.toast(this.t('config_import_failed'), 'error'); return; }
             }
 
-            if (result1.includes('OK') && result2.includes('OK')) {
+            // v3.5.1: Write both to temp, then rename atomically.
+            const tmpConf = `${this.confFile}.import.$$`;
+            const tmpWl = `${this.whitelistFile}.import.$$`;
+            const writeConf = `printf '%s' '${configB64}' | base64 -d > '${tmpConf}' && echo OK`;
+            const r1 = await this.execStrict(writeConf);
+            if (!r1.ok || !r1.stdout.includes('OK')) {
+                this.toast(this.t('save_failed'), 'error');
+                await this.execStrict(`rm -f '${tmpConf}' '${tmpWl}' 2>/dev/null`);
+                return;
+            }
+            if (wlB64) {
+                const r2 = await this.execStrict(`printf '%s' '${wlB64}' | base64 -d > '${tmpWl}' && echo OK`);
+                if (!r2.ok || !r2.stdout.includes('OK')) {
+                    this.toast(this.t('save_failed'), 'error');
+                    await this.execStrict(`rm -f '${tmpConf}' '${tmpWl}' 2>/dev/null`);
+                    return;
+                }
+            }
+            // Commit: rename temp to final. mv is atomic on same filesystem.
+            const commitConf = await this.execStrict(`mv -f '${tmpConf}' '${this.confFile}' && echo OK`);
+            const commitWl = wlB64 ? await this.execStrict(`mv -f '${tmpWl}' '${this.whitelistFile}' && echo OK`) : { ok: true, stdout: 'OK' };
+            if (commitConf.ok && commitConf.stdout.includes('OK') && commitWl.ok && commitWl.stdout.includes('OK')) {
                 this.toast(this.t('config_imported'), 'success');
                 await this.loadConfig();
                 await this.loadModules();
             } else {
                 this.toast(this.t('save_failed'), 'error');
+                await this.execStrict(`rm -f '${tmpConf}' '${tmpWl}' 2>/dev/null`);
             }
         } catch (e) {
             this.toast(this.t('config_import_failed'), 'error');
@@ -2436,109 +2445,191 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
 
     // === v2.5: 首次运行引导 ===
     async checkFirstRun() {
+        // v3.5.1: Content-hash gated onboarding. Shows when version or
+        // onboarding content changes; stays silent once acknowledged.
         try {
-            const raw = await this.exec(`cat "${this.stateDir}/first_run" 2>/dev/null`);
-            const val = (raw || '').trim();
-            if (val === '1' || val === '2') {
-                this.firstRun = parseInt(val);
-                if (!this.onboardingShown) {
-                    this.showOnboarding();
-                }
+            const ackKey = 'rescuex_onboarding_ack_v351';
+            const currentHash = 'v351_' + APP_VERSION_CODE;
+            let acked = '';
+            try { acked = localStorage.getItem(ackKey) || ''; } catch (_) {}
+            if (acked !== currentHash) {
+                this.showOnboarding(currentHash, ackKey);
             }
         } catch (e) { /* 忽略 */ }
     }
 
-    showOnboarding() {
+    showOnboarding(contentHash, ackKey) {
         if (this.onboardingShown) return;
         this.onboardingShown = true;
 
+        const isZh = this.lang === 'zh';
         const overlay = document.createElement('div');
         overlay.className = 'onboarding-overlay';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;';
 
         const modal = document.createElement('div');
-        modal.className = 'onboarding';
+        modal.style.cssText = 'background:var(--rx-surface,#fff);border-radius:16px;max-width:440px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;';
 
+        // Header
+        const header = document.createElement('div');
+        header.style.cssText = 'padding:20px 20px 12px;text-align:center;flex-shrink:0;';
         const logo = document.createElement('div');
-        logo.className = 'onboarding-logo';
+        logo.style.cssText = 'width:48px;height:48px;border-radius:12px;background:var(--rx-action,#3d82f5);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;margin:0 auto 8px;';
         logo.textContent = 'R';
+        const title = document.createElement('h2');
+        title.style.cssText = 'margin:0;font-size:18px;color:var(--rx-ink,#1a1a2e);';
+        title.textContent = isZh ? 'RescueX v3.5.1 更新须知' : 'RescueX v3.5.1 Update Notice';
+        header.appendChild(logo);
+        header.appendChild(title);
 
-        const h2 = document.createElement('h2');
-        h2.textContent = this.t('onboarding_title');
+        // Scrollable content area
+        const body = document.createElement('div');
+        body.style.cssText = 'flex:1;overflow-y:auto;padding:0 20px;-webkit-overflow-scrolling:touch;';
 
-        const subtitle = document.createElement('div');
-        subtitle.className = 'onboarding-subtitle';
-        subtitle.textContent = this.t('onboarding_subtitle');
-
-        // 步骤
-        const steps = document.createElement('div');
-        steps.className = 'onboarding-steps';
-        const stepData = [
-            ['1', 'onboarding_step1_title', 'onboarding_step1_desc'],
-            ['2', 'onboarding_step2_title', 'onboarding_step2_desc'],
-            ['3', 'onboarding_step3_title', 'onboarding_step3_desc'],
-            ['4', 'onboarding_step4_title', 'onboarding_step4_desc'],
-            ['5', 'onboarding_step5_title', 'onboarding_step5_desc'],
+        const sections = isZh ? [
+            { title: '🔒 隐私协议', items: [
+                'RescueX 不联网、不上传任何数据，所有状态文件仅存储在设备本地。',
+                '诊断包导出是用户主动操作，包含设备型号、系统版本、模块列表、配置和日志，导出前会脱敏。',
+                'GitHub Issue 草稿功能仅打开预填页面，不自动上传文件或代管 Token。',
+            ]},
+            { title: '📋 使用须知', items: [
+                '首次安装默认 DRY_RUN=true（仅记录日志不实际禁用模块），验证逻辑无误后再关闭。',
+                '白名单中的模块在救砖时不会被禁用，请将关键模块（字体、音效等）加入白名单。',
+                '一次性安全模式会立即写入禁用标记，下次启动生效，请确认后再布防。',
+                '覆盖更新后如遇异常，可先卸载模块（会彻底清理状态和持久化目录）再重新安装。',
+            ]},
+            { title: '✨ v3.5.1 新增与修复', items: [
+                '安全修复：慢启动不再残留 BOOTING 导致误救砖；救砖必须验证 disable 标记实际写入。',
+                '安全修复：一次性安全模式部分恢复失败时保留 journal，不再删除恢复证据。',
+                'Bridge 协议：execStrict 保留退出码/超时/异常，写操作不再因空输出误报成功。',
+                '配置导入原子化：配置和白名单要么同时提交，要么都不提交。',
+                '确认弹窗：默认聚焦取消按钮，危险操作需二次确认。',
+                '新增：配置 Schema 版本化、自适应启动超时、深色模式、诊断包多格式回退。',
+                '新增：可选原生看门狗（arm64），Shell 回退始终可用。',
+            ]},
+            { title: '⚠️ 重要提醒', items: [
+                '本模块具有 Root 权限，请仅从官方 GitHub Release 下载。',
+                '自动救砖会在连续启动失败时禁用非白名单模块并重启，请确保白名单配置正确。',
+                '如遇问题请使用诊断包导出功能生成报告，并通过 GitHub Issue 反馈。',
+            ]},
+        ] : [
+            { title: '🔒 Privacy Policy', items: [
+                'RescueX does not connect to the internet or upload any data. All state files are stored locally on the device.',
+                'Diagnostic bundle export is a user-initiated action containing device model, OS version, module list, config, and logs. Data is redacted before export.',
+                'GitHub Issue draft only opens a pre-filled page; it does not auto-upload files or manage tokens.',
+            ]},
+            { title: '📋 Usage Notice', items: [
+                'First install defaults to DRY_RUN=true (log only, no actual disabling). Verify logic before turning it off.',
+                'Whitelisted modules are never disabled during rescue. Add critical modules (fonts, audio) to the whitelist.',
+                'One-shot safe mode writes disable markers immediately, effective on next boot. Confirm before arming.',
+                'If issues occur after an update, uninstall the module (which fully cleans state and persist dirs) then reinstall.',
+            ]},
+            { title: '✨ v3.5.1 New & Fixed', items: [
+                'Fixed: Slow boot no longer leaves stale BOOTING state causing false rescue triggers.',
+                'Fixed: Full rescue must verify disable markers are actually written before committing success.',
+                'Fixed: One-shot safe mode retains journal on partial restore failure.',
+                'Bridge: execStrict preserves exit code/timeout/exception; writes no longer report false success.',
+                'Config import is now atomic (temp + rename).',
+                'Confirm dialogs default to Cancel; dangerous operations require double confirmation.',
+                'New: Config schema versioning, adaptive boot timeout, dark mode, multi-format diagnostic export.',
+                'New: Optional native watchdog (arm64) with Shell fallback.',
+            ]},
+            { title: '⚠️ Important', items: [
+                'This module has Root access. Only download from the official GitHub Release.',
+                'Auto-rescue disables non-whitelisted modules and reboots after consecutive boot failures.',
+                'Use the diagnostic export feature and report issues via GitHub Issues.',
+            ]},
         ];
-        // 若是升级（firstRun=2），额外显示新功能介绍
-        if (this.firstRun === 2) {
-            stepData.push(['★', 'onboarding_new_features', 'onboarding_new_features_desc']);
-        }
-        stepData.forEach(([num, titleKey, descKey]) => {
-            const step = document.createElement('div');
-            step.className = 'onboarding-step';
-            const numEl = document.createElement('div');
-            numEl.className = 'onboarding-step-num';
-            numEl.textContent = num;
-            const content = document.createElement('div');
-            content.className = 'onboarding-step-content';
-            const t = document.createElement('div');
-            t.className = 'onboarding-step-title';
-            t.textContent = this.t(titleKey);
-            const d = document.createElement('div');
-            d.className = 'onboarding-step-desc';
-            d.textContent = this.t(descKey);
-            content.appendChild(t);
-            content.appendChild(d);
-            step.appendChild(numEl);
-            step.appendChild(content);
-            steps.appendChild(step);
+
+        sections.forEach(sec => {
+            const h = document.createElement('div');
+            h.style.cssText = 'margin:16px 0 6px;font-size:14px;font-weight:700;color:var(--rx-ink,#1a1a2e);';
+            h.textContent = sec.title;
+            body.appendChild(h);
+            sec.items.forEach(text => {
+                const p = document.createElement('div');
+                p.style.cssText = 'font-size:13px;line-height:1.6;color:var(--rx-muted,#666);margin:4px 0 4px 12px;';
+                p.textContent = '• ' + text;
+                body.appendChild(p);
+            });
         });
 
-        const actions = document.createElement('div');
-        actions.className = 'onboarding-actions';
-        const skipBtn = document.createElement('button');
-        skipBtn.className = 'btn btn-text';
-        skipBtn.textContent = this.t('onboarding_skip');
-        const ackBtn = document.createElement('button');
-        ackBtn.className = 'btn btn-filled';
-        ackBtn.textContent = this.t('onboarding_ack');
+        // Scroll sentinel
+        const sentinel = document.createElement('div');
+        sentinel.style.cssText = 'height:1px;';
+        body.appendChild(sentinel);
 
-        actions.appendChild(skipBtn);
-        actions.appendChild(ackBtn);
+        // Footer with countdown
+        const footer = document.createElement('div');
+        footer.style.cssText = 'padding:12px 20px 16px;flex-shrink:0;border-top:1px solid var(--rx-border,#eee);text-align:center;';
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:12px;color:var(--rx-muted,#999);margin-bottom:8px;';
+        hint.textContent = isZh ? '请滚动到底部并等待倒计时结束' : 'Scroll to bottom and wait for countdown';
+        const countdown = document.createElement('div');
+        countdown.style.cssText = 'font-size:13px;color:var(--rx-muted,#999);margin-bottom:8px;';
+        countdown.textContent = isZh ? '请先滚动到底部' : 'Please scroll to bottom first';
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-filled';
+        btn.style.cssText = 'width:100%;opacity:0.4;pointer-events:none;';
+        btn.textContent = isZh ? '我已阅读并了解（20s）' : 'I have read and understood (20s)';
+        footer.appendChild(hint);
+        footer.appendChild(countdown);
+        footer.appendChild(btn);
 
-        modal.appendChild(logo);
-        modal.appendChild(h2);
-        modal.appendChild(subtitle);
-        modal.appendChild(steps);
-        modal.appendChild(actions);
+        modal.appendChild(header);
+        modal.appendChild(body);
+        modal.appendChild(footer);
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
 
-        const ack = async () => {
-            // 写入 onboarding_ack 标记，清除 first_run
-            await this.exec(`echo 1 > "${this.stateDir}/onboarding_ack" && echo 0 > "${this.stateDir}/first_run"`);
-            overlay.remove();
-            // 升级用户额外提示查看新功能
-            if (this.firstRun === 2) {
-                this.toast(this.lang === 'zh' ? '欢迎升级到 v3.1.1 Beta！' : 'Welcome to v3.1.1 Beta!', 'success');
+        // Track scroll state
+        let scrolledToBottom = false;
+        let countdownSec = 20;
+        let timer = null;
+
+        const updateButton = () => {
+            if (scrolledToBottom && countdownSec <= 0) {
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
+                btn.textContent = isZh ? '我已阅读并了解' : 'I have read and understood';
+            } else {
+                btn.style.opacity = '0.4';
+                btn.style.pointerEvents = 'none';
+                if (!scrolledToBottom) {
+                    countdown.textContent = isZh ? '请先滚动到底部' : 'Please scroll to bottom first';
+                } else {
+                    countdown.textContent = isZh ? `请等待 ${countdownSec}s` : `Please wait ${countdownSec}s`;
+                }
             }
         };
-        ackBtn.onclick = ack;
-        skipBtn.onclick = () => {
-            // 跳过不写 ack，下次还会再弹（除非用户主动看完）
-            overlay.remove();
-            this.onboardingShown = false;
+
+        body.addEventListener('scroll', () => {
+            if (body.scrollTop + body.clientHeight >= body.scrollHeight - 4) {
+                if (!scrolledToBottom) {
+                    scrolledToBottom = true;
+                    // Start countdown only after scrolling to bottom
+                    timer = setInterval(() => {
+                        countdownSec--;
+                        updateButton();
+                        if (countdownSec <= 0) {
+                            clearInterval(timer);
+                            timer = null;
+                        }
+                    }, 1000);
+                }
+            }
+        });
+
+        btn.onclick = () => {
+            if (scrolledToBottom && countdownSec <= 0) {
+                try { localStorage.setItem(ackKey, contentHash); } catch (_) {}
+                if (timer) { clearInterval(timer); timer = null; }
+                overlay.remove();
+                this.toast(isZh ? '欢迎使用 RescueX v3.5.1' : 'Welcome to RescueX v3.5.1', 'success');
+            }
         };
+
+        updateButton();
     }
 
     // === v2.5: 启动统计面板 ===
@@ -3297,7 +3388,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         }
     }
 
-    // === v3.5.0: diagnostics and one-shot safe mode ===
+    // === v3.5.1: diagnostics and one-shot safe mode ===
     v35Command(functionName) {
         const allowed = new Set([
             'v35_simulate_rescue', 'v35_one_shot_status',
@@ -3336,17 +3427,35 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
     }
 
     async v35ArmOneShotSafeMode() {
+        // v3.5.1: Show a dry-run diff preview before the user confirms.
+        this.showLoading(true);
+        let preview = '';
+        try {
+            const previewR = await this.execStrict(`${this.v35Command('v35_arm_one_shot_safe_mode --dry-run')}; rc=$?; echo PREVIEW_RC=$rc`);
+            preview = previewR.stdout || '';
+        } catch (_) { preview = ''; }
+        this.showLoading(false);
+        const diffLines = preview.split('\n').filter(l => l.startsWith('DISABLE:') || l.startsWith('SKIP:') || l.startsWith('PREVIEW_RC='));
+        const diffSummary = diffLines.length > 0 ? diffLines.join('\n') : (this.lang === 'zh' ? '（无法获取预览，将直接执行）' : '(No preview available; will execute directly)');
         const message = this.lang === 'zh'
-            ? '将立即写入本次事务涉及模块的禁用标记，下一次启动进入安全模式；成功启动后仅按事务清单恢复。不会触碰白名单或原先已禁用模块。是否继续？'
-            : 'This writes disable markers for this transaction now, starts the next boot in safe mode, and restores only markers recorded in its journal after a successful boot. Whitelisted and previously disabled modules are untouched. Continue?';
+            ? `将立即写入本次事务涉及模块的禁用标记，下一次启动进入安全模式；成功启动后仅按事务清单恢复。不会触碰白名单或原先已禁用模块。\n\n=== 变更预览 ===\n${diffSummary}\n\n是否确认执行？`
+            : `This writes disable markers for this transaction now, starts the next boot in safe mode, and restores only markers recorded in its journal after a successful boot. Whitelisted and previously disabled modules are untouched.\n\n=== Change Preview ===\n${diffSummary}\n\nConfirm and execute?`;
+        // v3.5.1: Double confirmation for danger operations.
         if (!await this.confirmDialog(this.t('confirm_title'), message, this.t('btn_confirm'), 'btn-danger')) return;
+        const finalMsg = this.lang === 'zh'
+            ? '这是高风险操作：写入的禁用标记将在下次启动生效。确定要继续吗？'
+            : 'This is a high-risk operation: disable markers will take effect on next boot. Are you sure?';
+        if (!await this.confirmDialog(this.lang === 'zh' ? '二次确认' : 'Final Confirmation', finalMsg, this.t('btn_confirm'), 'btn-danger')) return;
         this.showLoading(true);
         try {
-            const result = await this.exec(`${this.v35Command('v35_arm_one_shot_safe_mode')}; rc=$?; v35_one_shot_status; echo RESULT=$rc`);
+            const r = await this.execStrict(`${this.v35Command('v35_arm_one_shot_safe_mode')}; rc=$?; v35_one_shot_status; echo RESULT=$rc`);
+            const result = r.stdout || '';
             this.v35SetOutput(result);
-            if (result.includes('RESULT=0')) {
+            if (r.ok && result.includes('RESULT=0')) {
                 this.toast(this.lang === 'zh' ? '一次性安全模式已布防' : 'One-shot safe mode armed', 'success');
                 await this.loadDisabledModules();
+            } else if (r.timedOut) {
+                this.toast(this.lang === 'zh' ? '操作超时' : 'Operation timed out', 'error');
             } else {
                 this.toast(this.t('save_failed'), 'error');
             }
@@ -3381,12 +3490,42 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         this.showLoading(true);
         try {
             const script = `${this.v35Command('v35_generate_diagnostic_bundle')}; rc=$?; echo RESULT=$rc`;
-            const result = await this.exec(script, EXEC_REPORT_TIMEOUT_MS);
+            const r = await this.execStrict(script, EXEC_REPORT_TIMEOUT_MS);
+            const result = r.stdout || '';
             this.v35SetOutput(result);
-            if (result.includes('RESULT=0')) {
-                this.toast(this.lang === 'zh' ? '脱敏诊断包已生成，路径已显示。' : 'Redacted diagnostic bundle created; its path is shown.', 'success', 5000);
+            if (r.ok && result.includes('RESULT=0')) {
+                const pathMatch = result.match(/PATH=(\S+)/);
+                const path = pathMatch ? pathMatch[1] : '';
+                const ext = path.endsWith('.tar.gz') ? '.tar.gz' : (path.endsWith('.txt') ? '.txt' : '.zip');
+                this.toast(this.lang === 'zh'
+                    ? `诊断包已生成（${ext}）${path ? '，路径: ' + path : ''}`
+                    : `Diagnostic bundle created (${ext})${path ? ', path: ' + path : ''}`, 'success', 6000);
+                // v3.5.1: Offer to open a pre-filled GitHub Issue draft.
+                const issueMsg = this.lang === 'zh'
+                    ? '是否打开 GitHub Issue 草稿页面？诊断包不会被自动上传，你需要手动决定是否附加文件。'
+                    : 'Open a pre-filled GitHub Issue draft? The diagnostic bundle will NOT be auto-uploaded; you decide whether to attach it.';
+                const wantIssue = await this.confirmDialog(
+                    this.lang === 'zh' ? '反馈 Issue' : 'Report Issue',
+                    issueMsg,
+                    this.t('btn_confirm'), 'btn-filled'
+                );
+                if (wantIssue) {
+                    const body = encodeURIComponent(
+                        `## RescueX Diagnostic Report\n\n` +
+                        `Version: ${APP_VERSION}\n` +
+                        `Date: ${new Date().toISOString()}\n\n` +
+                        `### Diagnostic Summary\n\`\`\`\n${result.split('\n').filter(l => l.includes('PATH=') || l.includes('RESULT=')).join('\n')}\n\`\`\`\n\n` +
+                        `### Description\n<!-- Describe the issue you encountered -->\n\n` +
+                        `### Steps to Reproduce\n<!-- List the steps -->\n\n` +
+                        `### Diagnostic Bundle\n<!-- The bundle was saved to your device (${ext}). Attach it here if you want to share it. -->\n`
+                    );
+                    const labels = encodeURIComponent('diagnostic');
+                    this.openExternal(`${REPO_URL}/issues/new?labels=${labels}&body=${body}`);
+                }
+            } else if (r.timedOut) {
+                this.toast(this.lang === 'zh' ? '诊断包生成超时' : 'Diagnostic bundle generation timed out', 'error');
             } else {
-                this.toast(this.lang === 'zh' ? '未找到可用 ZIP 工具，诊断包未生成。' : 'No supported ZIP tool was found; bundle was not created.', 'warn', 5000);
+                this.toast(this.lang === 'zh' ? '诊断包生成失败' : 'Diagnostic bundle generation failed', 'error');
             }
         } catch (e) {
             this.toast(this.t('export_failed'), 'error');
@@ -3394,21 +3533,30 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         this.showLoading(false);
     }
 
-    // === v3.0.1: APP 解冻 ===
+    // === v3.0.1: APP 解冻 (v3.5.1: 使用 execStrict 区分拒绝/失败/无项目) ===
     async unfreezeApps() {
         const confirm = await this.confirmDialog(
             this.t('confirm_title'),
-            this.t('unfreeze_confirm'),
-            this.t('btn_confirm'), 'btn-danger'
+            this.lang === 'zh'
+                ? 'APP 解冻功能已永久退役。此操作不会再删除 package-restrictions.xml。'
+                : 'APP unfreeze has been permanently retired. This action will not delete package-restrictions.xml.',
+            this.t('btn_confirm'), 'btn-filled'
         );
         if (!confirm) return;
         this.showLoading(true);
         try {
-            const result = await this.exec(`. "${this.basePath}/common.sh" && manual_unfreeze_apps`);
-            if (result.includes('DONE')) {
+            const r = await this.execStrict(`. "${this.basePath}/common.sh" && manual_unfreeze_apps 2>/dev/null; echo "RC=$?"`);
+            const out = r.stdout || '';
+            if (r.timedOut) {
+                this.toast(this.lang === 'zh' ? '操作超时' : 'Operation timed out', 'error');
+            } else if (out.includes('REFUSED')) {
+                this.toast(this.lang === 'zh' ? 'APP 解冻已被安全策略拒绝' : 'APP unfreeze refused by safety policy', 'warn');
+            } else if (out.includes('DONE')) {
                 this.toast(this.t('unfreeze_done'), 'success');
+            } else if (out.includes('NOT_FOUND') || out.includes('SKIP')) {
+                this.toast(this.lang === 'zh' ? '没有需要解冻的项目' : 'No items to unfreeze', 'warn');
             } else {
-                this.toast(this.t('unfreeze_skip'), 'warn');
+                this.toast(this.lang === 'zh' ? 'APP 解冻已退役或未产生变更' : 'APP unfreeze retired or no change', 'warn');
             }
         } catch (e) {
             this.toast(this.t('save_failed'), 'error');
@@ -3418,15 +3566,23 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
 
     // === v3.0.1: 锁定脚本目录 ===
     // === Modal ===
+    // v3.5.1: default focus is Cancel (not OK). Danger dialogs use Escape/Enter
+    // to dismiss, never to confirm. Focus is trapped inside the overlay.
     confirmDialog(title, message, okText, okClass) {
         return new Promise(resolve => {
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
+            overlay.setAttribute('role', 'dialog');
+            overlay.setAttribute('aria-modal', 'true');
+            overlay.setAttribute('aria-labelledby', 'rx-modal-title');
+            overlay.setAttribute('aria-describedby', 'rx-modal-desc');
             const modal = document.createElement('div');
             modal.className = 'modal';
             const h3 = document.createElement('h3');
+            h3.id = 'rx-modal-title';
             h3.textContent = title;
             const p = document.createElement('p');
+            p.id = 'rx-modal-desc';
             p.textContent = message;
             const btns = document.createElement('div');
             btns.className = 'modal-buttons';
@@ -3448,17 +3604,30 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
             cancel.onclick = () => close(false);
             ok.onclick = () => close(true);
             overlay.onclick = (e) => { if (e.target === overlay) close(false); };
-            // 键盘支持
             overlay.tabIndex = -1;
             overlay.focus();
             overlay.onkeydown = (e) => {
-                if (e.key === 'Enter') close(true);
-                else if (e.key === 'Escape') close(false);
+                if (e.key === 'Escape') { e.preventDefault(); close(false); }
+                else if (e.key === 'Enter') {
+                    // For danger buttons, Enter dismisses (cancel), not confirms.
+                    const isDanger = (okClass || '').includes('danger');
+                    e.preventDefault();
+                    close(!isDanger);
+                } else if (e.key === 'Tab') {
+                    // Simple focus trap: cycle between cancel and ok.
+                    e.preventDefault();
+                    if (document.activeElement === ok) cancel.focus();
+                    else ok.focus();
+                }
             };
-            setTimeout(() => ok.focus(), 50);
+            // v3.5.1: default focus is Cancel, not OK.
+            setTimeout(() => cancel.focus(), 50);
         });
     }
 }
+
+// v3.5.1: Restore instantiation that was accidentally removed.
+window.RescueXUI = RescueXUI;
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => new RescueXUI());

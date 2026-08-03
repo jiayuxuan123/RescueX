@@ -16,12 +16,22 @@ if [ ! -f "$MODDIR/common.sh" ]; then
 fi
 . "$MODDIR/common.sh"
 
+# 读取配置，取得可配置的轮询间隔
+read_config
+
+# 原生等待器仅负责 CLOCK_MONOTONIC 计时，到点后用 exec 交回此脚本。
+# 此分支不再二次等待，也不会绕过 Shell 中的锁、事务和写后读验证。
+if [ "${1:-}" = "--trigger" ]; then
+    printf '%s\n' "$$" > "$WATCHDOG_PID_FILE" 2>/dev/null
+    chmod 0600 "$WATCHDOG_PID_FILE" 2>/dev/null
+    log "[WD] 原生等待器到期，进入受控 Shell 触发路径"
+    watchdog_trigger
+    exit $?
+fi
+
 # 超时参数
 TIMEOUT="${1:-90}"
 case "$TIMEOUT" in ''|*[!0-9]*) TIMEOUT=90 ;; esac
-
-# 读取配置，取得可配置的轮询间隔
-read_config
 
 # v2.5 自适应轮询间隔
 POLL_INTERVAL="$WATCHDOG_POLL_INTERVAL_SEC"

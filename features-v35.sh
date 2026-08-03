@@ -304,11 +304,15 @@ prune_manual_snapshots_in_dir() {
 
 v35_arm_one_shot_safe_mode() {
     local now expires snap list="$V35_DIR/.oneshot-modules.$$" base dir id
+    local dry_run=false
+    [ "${1:-}" = "--dry-run" ] && dry_run=true
     [ -f "$V35_ONESHOT_APPLIED" ] && return 1
     read_whitelist
     now=$(v35_now); expires=$((now + 86400))
-    snap=$(take_snapshot manual) || return 1
-    v35_write_snapshot_meta "$snap" "下一次启动安全模式" true oneshot || return 1
+    if [ "$dry_run" = false ]; then
+        snap=$(take_snapshot manual) || return 1
+        v35_write_snapshot_meta "$snap" "下一次启动安全模式" true oneshot || return 1
+    fi
     : > "$list"
     for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
         [ -n "$base" ] && [ -d "$base" ] || continue
@@ -317,11 +321,16 @@ v35_arm_one_shot_safe_mode() {
             id=$(basename "$dir")
             [ "$id" = "$SELF_ID" ] && continue
             v35_clean_id "$id" >/dev/null || continue
-            [ -f "$dir/disable" ] && continue
-            is_whitelisted "$id" && continue
-            grep -qxF "$id" "$list" 2>/dev/null || printf '%s\n' "$id" >> "$list"
+            [ -f "$dir/disable" ] && { printf 'SKIP:%s(already disabled)\n' "$id"; continue; }
+            is_whitelisted "$id" && { printf 'SKIP:%s(whitelisted)\n' "$id"; continue; }
+            grep -qxF "$id" "$list" 2>/dev/null || { printf '%s\n' "$id" >> "$list"; printf 'DISABLE:%s\n' "$id"; }
         done
     done
+    if [ "$dry_run" = true ]; then
+        rm -f "$list"
+        printf 'PREVIEW_RC=0\n'
+        return 0
+    fi
     { printf 'STATE=armed\nCREATED=%s\nEXPIRES=%s\nSNAPSHOT=%s\n' "$now" "$expires" "$(basename "$snap")"; sed 's/^/MODULE=/' "$list"; } | v35_atomic_file "$V35_ONESHOT_PLAN" || { rm -f "$list"; return 1; }
     rm -f "$list"
     v35_timeline_append SAFE_MODE warning armed "snapshot=$(basename "$snap")"
@@ -389,20 +398,43 @@ v35_apply_one_shot_safe_mode() {
 }
 
 v35_restore_one_shot_safe_mode() {
-    local id dir restored=0 skipped=0
+    local id dir restored=0 already_clear=0 unresolved=0 tmp="$V35_ONESHOT_APPLIED.restore.$$"
     [ -f "$V35_ONESHOT_APPLIED" ] || return 0
+
+    # Persist the transition before changing markers. If power is lost, the next
+    # successful service pass has unambiguous evidence that recovery was pending.
+    sed 's/^STATE=.*/STATE=restoring/' "$V35_ONESHOT_APPLIED" | v35_atomic_file "$V35_ONESHOT_APPLIED" || return 1
     while IFS='=' read -r key id; do
         [ "$key" = MODULE ] || continue
-        v35_clean_id "$id" >/dev/null || { skipped=$((skipped + 1)); continue; }
-        dir=$(v35_find_module_dir "$id") || { skipped=$((skipped + 1)); continue; }
+        v35_clean_id "$id" >/dev/null || { unresolved=$((unresolved + 1)); continue; }
+        dir=$(v35_find_module_dir "$id") || { unresolved=$((unresolved + 1)); continue; }
         if [ -f "$dir/disable" ]; then
-            rm -f "$dir/disable" 2>/dev/null && restored=$((restored + 1)) || skipped=$((skipped + 1))
+            if rm -f "$dir/disable" 2>/dev/null && [ ! -f "$dir/disable" ]; then
+                restored=$((restored + 1))
+            else
+                unresolved=$((unresolved + 1))
+            fi
+        else
+            # Marker was already absent; it is safe to treat as recovered, but
+            # keep it separately observable from a marker we removed ourselves.
+            already_clear=$((already_clear + 1))
         fi
     done < "$V35_ONESHOT_APPLIED"
-    rm -f "$V35_ONESHOT_APPLIED" "$V35_ONESHOT_PLAN" 2>/dev/null
-    v35_timeline_append SAFE_MODE success restored "restored=$restored,skipped=$skipped"
-    log_rescue_action SAFE_MODE_RESTORE "restored=$restored,skipped=$skipped"
-    printf 'RESTORED=%s\nSKIPPED=%s\n' "$restored" "$skipped"
+
+    if [ "$unresolved" -gt 0 ]; then
+        sed 's/^STATE=.*/STATE=partial/' "$V35_ONESHOT_APPLIED" | v35_atomic_file "$V35_ONESHOT_APPLIED" || true
+        v35_timeline_append SAFE_MODE warning partial_restore "restored=$restored,already_clear=$already_clear,unresolved=$unresolved"
+        log_rescue_action SAFE_MODE_RESTORE_PARTIAL "restored=$restored,already_clear=$already_clear,unresolved=$unresolved"
+        printf 'RESULT=PARTIAL\nRESTORED=%s\nALREADY_CLEAR=%s\nUNRESOLVED=%s\n' "$restored" "$already_clear" "$unresolved"
+        # Retain both plan and applied journal for explicit retry/manual recovery.
+        return 1
+    fi
+
+    rm -f "$V35_ONESHOT_APPLIED" "$V35_ONESHOT_PLAN" 2>/dev/null || return 1
+    v35_timeline_append SAFE_MODE success restored "restored=$restored,already_clear=$already_clear"
+    log_rescue_action SAFE_MODE_RESTORE "restored=$restored,already_clear=$already_clear"
+    printf 'RESULT=RESTORED\nRESTORED=%s\nALREADY_CLEAR=%s\n' "$restored" "$already_clear"
+    return 0
 }
 
 v35_one_shot_status() {
@@ -500,22 +532,45 @@ v35_redact_stream() {
 }
 
 v35_create_diagnostic_archive() {
-    local work="$1" out="$2" zip_bin candidate busybox_bin
+    local work="$1" out="$2" zip_bin candidate busybox_bin out_base out_targz
+    out_base="${out%.zip}"
+    out_targz="${out_base}.tar.gz"
+
+    # 1. System zip
     if zip_bin=$(command -v zip 2>/dev/null); then
-        (cd "$work" && "$zip_bin" -qr "$out" .)
-        return $?
+        (cd "$work" && "$zip_bin" -qr "$out" .) && return 0
     fi
-    # Root managers commonly ship BusyBox outside PATH; probe known locations
-    # without trusting a caller-provided executable path.
+
+    # 2. BusyBox zip (root managers ship it outside PATH)
     for candidate in busybox /data/adb/magisk/busybox /data/adb/ksu/bin/busybox /data/adb/ksu/busybox /data/adb/ap/bin/busybox; do
         case "$candidate" in
             */*) [ -x "$candidate" ] || continue; busybox_bin="$candidate" ;;
             *) busybox_bin=$(command -v "$candidate" 2>/dev/null) || continue ;;
         esac
         "$busybox_bin" zip -h >/dev/null 2>&1 || continue
-        (cd "$work" && "$busybox_bin" zip -qr "$out" .)
-        return $?
+        (cd "$work" && "$busybox_bin" zip -qr "$out" .) && return 0
     done
+
+    # 3. tar + gzip — universally available on Android (toybox).
+    #    Output as .tar.gz instead of .zip; any OS and GitHub can handle it.
+    if command -v tar >/dev/null 2>&1 && command -v gzip >/dev/null 2>&1; then
+        (cd "$work" && tar czf "$out_targz" .) && { _V35_ARCHIVE_OUT="$out_targz"; return 0; }
+    fi
+
+    # 4. Pure shell: concatenate all files into a single text bundle.
+    #    No external tool required. Not a real archive, but always works.
+    local f name txt_out="${out_base}.txt"
+    {
+        printf '=== RescueX Diagnostic Bundle (plain text fallback) ===\n\n'
+        for f in "$work"/*; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            printf '\n========== %s ==========\n' "$name"
+            cat "$f" 2>/dev/null || printf '(read error)\n'
+        done
+    } > "$txt_out" 2>/dev/null
+    [ -s "$txt_out" ] && { _V35_ARCHIVE_OUT="$txt_out"; return 0; }
+
     return 2
 }
 
@@ -537,7 +592,7 @@ v35_generate_diagnostic_bundle() {
     v35_collect_module_inventory "$work/modules.tsv" >/dev/null 2>&1
     chmod -R go-rwx "$work" 2>/dev/null
     if v35_create_diagnostic_archive "$work" "$out"; then
-        :
+        out="${_V35_ARCHIVE_OUT:-$out}"
     else
         archive_rc=$?
         rm -rf "$work"
@@ -545,7 +600,7 @@ v35_generate_diagnostic_bundle() {
     fi
     rm -rf "$work"; chmod 0600 "$out" 2>/dev/null
     v35_timeline_append DIAGNOSTIC success exported "file=$(basename "$out")"
-    printf '%s\n' "$out"
+    printf 'PATH=%s\n' "$out"
 }
 
 v35_delete_snapshot_meta() {

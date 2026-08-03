@@ -19,33 +19,46 @@ fi
 # 仅 post-fs-data 使用的本地函数
 # ============================================================
 
-# 启动看门狗（双 fork 脱离父进程，watchdog.sh 自行写 PID）
+# 启动看门狗：默认 Shell 轮询；只有已验证的 arm64 原生二进制且用户
+# 显式配置 WATCHDOG_ENGINE=native 时才启用单调时钟原生等待器。任何失败
+# 都无条件回退到已知的 Shell 路径，不能留下“没有看门狗”的空窗。
 start_watchdog() {
-    local timeout="$1"
+    local timeout="$1" engine native_bin
+    engine=$(get_watchdog_engine 2>/dev/null || echo shell)
+    native_bin="$MODDIR/webroot/arm64-v8a/rescuex-watchdog"
+    rm -f "$WATCHDOG_PID_FILE" 2>/dev/null
 
-    # 双 fork 让看门狗脱离父进程（init 切换阶段不被清理）
-    ( sh "$WATCHDOG_SCRIPT" "$timeout" >/dev/null 2>&1 < /dev/null & )
+    if [ "$engine" = native ]; then
+        ( "$native_bin" "$timeout" "$WATCHDOG_SCRIPT" "$WATCHDOG_PID_FILE" >/dev/null 2>&1 < /dev/null & )
+        log "请求启动原生看门狗（单调时钟，timeout=${timeout}s）"
+    else
+        ( sh "$WATCHDOG_SCRIPT" "$timeout" >/dev/null 2>&1 < /dev/null & )
+        log "请求启动 Shell 看门狗（timeout=${timeout}s）"
+    fi
 
-    # 等待 watchdog.sh 写入 PID
-    local i=0
-    while [ $i -lt 3 ]; do
+    local i=0 wd_pid
+    while [ "$i" -lt 3 ]; do
         sleep 1
-        if [ -f "$WATCHDOG_PID_FILE" ]; then
-            local wd_pid
-            wd_pid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null)
-            case "$wd_pid" in
-                ''|*[!0-9]*) wd_pid=0 ;;
-            esac
-            if [ "$wd_pid" != "0" ] && kill -0 "$wd_pid" 2>/dev/null; then
-                log "看门狗已启动 (PID=$wd_pid, timeout=${timeout}s)"
-                return 0
-            fi
+        wd_pid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null)
+        case "$wd_pid" in ''|*[!0-9]*) wd_pid=0 ;; esac
+        if [ "$wd_pid" != 0 ] && kill -0 "$wd_pid" 2>/dev/null; then
+            log "看门狗已启动 (engine=$engine PID=$wd_pid timeout=${timeout}s)"
+            return 0
         fi
         i=$((i + 1))
     done
 
-    log "警告：看门狗启动后未找到存活进程，可能已被 init 清理"
+    if [ "$engine" = native ]; then
+        log "警告：原生看门狗启动失败，回退 Shell"
+        ( sh "$WATCHDOG_SCRIPT" "$timeout" >/dev/null 2>&1 < /dev/null & )
+        sleep 1
+        wd_pid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null)
+        case "$wd_pid" in ''|*[!0-9]*) wd_pid=0 ;; esac
+        [ "$wd_pid" != 0 ] && kill -0 "$wd_pid" 2>/dev/null && return 0
+    fi
+    log "警告：看门狗未找到存活进程；保留 BOOTING，拒绝伪造守护已启动"
     rm -f "$WATCHDOG_PID_FILE"
+    return 1
 }
 
 is_magisk_family() {
@@ -236,10 +249,12 @@ else
     fi
 fi
 
-# 检测 OTA 状态（底层固件刷机）
-TIMEOUT_TO_USE="$BOOT_TIMEOUT_SEC"
+# 检测 OTA 状态（底层固件刷机）。普通启动优先使用经过上下限
+# 约束的历史移动平均；OTA/补丁仍使用专用、明确配置的更长窗口。
+TIMEOUT_TO_USE="$(get_effective_boot_timeout)"
 OTA_DETECTED="false"
 PATCH_DETECTED="false"
+log "普通启动有效超时: ${TIMEOUT_TO_USE}s（schema=${CONFIG_SCHEMA_VERSION}, adaptive=${BOOT_TIMEOUT_ADAPTIVE}）"
 if detect_ota; then
     OTA_DETECTED="true"
     TIMEOUT_TO_USE="$OTA_TIMEOUT_SEC"
@@ -290,8 +305,11 @@ else
     trigger_rescue_flag=0
     if [ "$PREV_FAIL_COUNT" -ge "$REBOOT_THRESHOLD" ]; then
         log "连续启动失败 $PREV_FAIL_COUNT 次 >= 阈值 $REBOOT_THRESHOLD，触发三级救砖"
-        three_level_rescue
-        trigger_rescue_flag=1
+        if three_level_rescue; then
+            trigger_rescue_flag=1
+        else
+            log "三级救砖未验证完成；不递增救砖计数、不伪造 RESCUED"
+        fi
     elif [ "$PROGRESSIVE_RESCUE" = "true" ] && [ "$PREV_FAIL_COUNT" -ge 1 ]; then
         log "渐进式救砖触发 (失败 $PREV_FAIL_COUNT 次)"
         # v3.0.1 FIX: 使用 three_level_rescue 替代直接调用 suspect_rescue
@@ -299,8 +317,11 @@ else
         # 但 suspect_rescue 失败后没有兜底，导致嫌疑模块仅被标记而未禁用
         # three_level_rescue 内部会根据 RESCUE_LEVEL 选择策略，
         # 且 Level 0 失败后会立即升级到 Level 1（全量救砖）
-        three_level_rescue
-        trigger_rescue_flag=1
+        if three_level_rescue; then
+            trigger_rescue_flag=1
+        else
+            log "三级救砖未验证完成；不递增救砖计数、不伪造 RESCUED"
+        fi
     fi
 
     # 更新救砖计数

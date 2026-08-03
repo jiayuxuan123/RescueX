@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.0"
-RX_VERSION_CODE=35000
+RX_VERSION="v3.5.1"
+RX_VERSION_CODE=35001
 
 # ============================================================
 # 路径初始化
@@ -3217,4 +3217,10 @@ boot_health_confirmed() {
 if [ -f "$MODDIR/features-v35.sh" ]; then
     . "$MODDIR/features-v35.sh"
     v35_init_paths
+fi
+
+# v3.5.1 safety layer is loaded last so its fail-closed state machine and
+# schema-aware compatibility overrides cannot be replaced by legacy helpers.
+if [ -f "$MODDIR/v351-safety.sh" ]; then
+    . "$MODDIR/v351-safety.sh"
 fi
