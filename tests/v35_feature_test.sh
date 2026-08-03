@@ -167,7 +167,7 @@ PY
 EOF
 chmod 0700 "$FAKE_BIN/zip"
 printf 'token=super-secret-value\n/data/data/com.example.private/cache\n' > "$LOG_FILE"
-bundle=$(PATH="$FAKE_BIN:$PATH" v35_generate_diagnostic_bundle)
+bundle=$(PATH="$FAKE_BIN:$PATH" v35_generate_diagnostic_bundle | sed -n 's/^PATH=//p')
 assert_file "$bundle" '诊断包应创建'
 log_text=$(unzip -p "$bundle" rescue-log.txt)
 [ -n "$log_text" ] || fail '诊断包应包含救援日志'

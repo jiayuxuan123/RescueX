@@ -1441,7 +1441,7 @@ input[type="number"], input[type="text"] { min-height: 44px; border-radius: 6px;
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } }
 
-/* === v3.5.1 Dark Mode (system-following, opt-in via OS setting) === */
+/* === v3.5.2 Dark Mode (system-following, opt-in via OS setting) === */
 @media (prefers-color-scheme: dark) {
     :root {
         --rx-bg: #1a1a2e;

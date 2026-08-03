@@ -10,6 +10,10 @@ for file in $required; do
     [ -e "$file" ] || { printf 'MISSING: %s\n' "$file" >&2; exit 1; }
 done
 
+[ -x webroot/arm64-v8a/rescuex-watchdog ] || { printf 'NATIVE_WATCHDOG_MISSING_OR_NOT_EXECUTABLE\n' >&2; exit 1; }
+file webroot/arm64-v8a/rescuex-watchdog | grep -Eq 'AArch64|arm64' || { printf 'NATIVE_WATCHDOG_NOT_AARCH64\n' >&2; exit 1; }
+readelf -l webroot/arm64-v8a/rescuex-watchdog | grep -q '/system/bin/linker64' || { printf 'NATIVE_WATCHDOG_NOT_ANDROID_PIE\n' >&2; exit 1; }
+
 for file in *.sh; do
     sh -n "$file"
 done

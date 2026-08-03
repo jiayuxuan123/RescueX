@@ -1,3 +1,10 @@
+# v3.5.2（原生看门狗正式落地）
+
+- **原生看门狗正式可用**：随包包含 Android NDK r27c 编译的 arm64-v8a PIE 二进制，使用 `CLOCK_MONOTONIC` 计时并在超时后交接给 `watchdog.sh --trigger`。
+- **安全回退**：仅显式配置 `WATCHDOG_ENGINE=native`、ABI 匹配、文件可执行且二进制自检通过时启用；任一条件失败立即回退 Shell。
+- **构建校正**：补齐 `fchmod` 声明、Android NDK 构建脚本与模块安装脚本执行权限。
+- **发布校验**：发布包包含预编译二进制，Release SHA-256 与 `update.json` 一致。
+
 # v3.5.1（安全热修复）
 
 > `update.json` 保留在 `module.prop` 中，管理器可正常检查更新。`update.json` 新增 `sha256` 字段，发布后填入实际 ZIP 哈希供校验。

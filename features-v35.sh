@@ -452,7 +452,12 @@ v35_one_shot_status() {
 
 v35_simulate_rescue() {
     local level fail threshold progressive action reason changes protected=0 candidates=0
-    read_config; read_status; read_rescue_level; read_whitelist
+    local readonly_prev=${RESCUEX_READ_ONLY-}
+    # Simulation is observational: config parsing must not migrate or rewrite it.
+    RESCUEX_READ_ONLY=true
+    read_config
+    if [ -n "$readonly_prev" ]; then RESCUEX_READ_ONLY=$readonly_prev; else unset RESCUEX_READ_ONLY; fi
+    read_status; read_rescue_level; read_whitelist
     level=${RESCUE_LEVEL:-0}; fail=${FAIL_COUNT:-0}; threshold=${REBOOT_THRESHOLD:-3}; progressive=${PROGRESSIVE_RESCUE:-true}
     changes=$(wc -l < "$V35_CHANGES_FILE" 2>/dev/null || echo 0); case "$changes" in ''|*[!0-9]*) changes=0 ;; esac
     if patch_flag_active || [ "${PATCH_DETECTED:-false}" = true ]; then action=hold; reason=patch-window

@@ -92,7 +92,11 @@ read_config() {
     BOOT_TIMEOUT_ADAPTIVE=$(rx_bool "$BOOT_TIMEOUT_ADAPTIVE")
     case "$WATCHDOG_ENGINE" in native|shell) ;; *) WATCHDOG_ENGINE=shell ;; esac
     APP_UNFREEZE_MANUAL_ENABLED=false
-    rx_config_migrate_runtime || log "[CONFIG] 警告：运行时 schema 迁移失败，继续使用内存安全默认值"
+    # Read-only inspectors (notably v35_simulate_rescue) must not migrate or
+    # rewrite the persisted config merely by asking for a preview.
+    if [ "${RESCUEX_READ_ONLY:-false}" != true ]; then
+        rx_config_migrate_runtime || log "[CONFIG] 警告：运行时 schema 迁移失败，继续使用内存安全默认值"
+    fi
 }
 
 rx_boot_history_file() { printf '%s' "$STATE_DIR/boot_duration_history"; }

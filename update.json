@@ -1,7 +1,7 @@
 {
-  "version": "v3.5.1",
-  "versionCode": 35001,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.1/RescueX-v3.5.1.zip",
-  "changelog": "安全热修复：Bridge 严格结果协议、状态机假成功修复、配置原子导入、深色模式、原生看门狗接口、自适应超时、差异预览与二次确认",
-  "sha256": "636785a33dc427900df4676b8e7244b0040d1eaad544a7bb93fa33f412d0b71d"
+  "version": "v3.5.2",
+  "versionCode": 35002,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.2/RescueX-v3.5.2.zip",
+  "changelog": "原生看门狗正式落地：Android NDK r27c arm64-v8a PIE 二进制、Shell 安全回退、脚本执行权限修复与发布包完整校验",
+  "sha256": "PLACEHOLDER_FILL_AFTER_RELEASE_BUILD"
 }

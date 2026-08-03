@@ -33,7 +33,7 @@ ok 'expired patch flag is cleared'
 # 4: New patch flag has schema and is active.
 PATCH_FLAG_TTL_SEC=300; set_patch_flag
 patch_flag_active
- grep -q '^SCHEMA=2$' "$PATCH_FLAG_FILE"
+ grep -q '^SCHEMA=3$' "$PATCH_FLAG_FILE"
 ok 'new patch flag is structured and active'
 # 5: Lock excludes a second owner and can be released.
 rescue_lock_acquire test
@@ -46,7 +46,9 @@ if app_unfreeze; then echo 'app unfreeze unexpectedly succeeded' >&2; exit 1; fi
 ok 'app unfreeze is manual-confirmation only'
 # 7: A normal version upgrade rebuilds the current module baseline; a same-version change still fails.
 IMOD="$TD/imod"; mkdir -p "$IMOD"
-for f in module.prop common.sh watchdog.sh integrity.sh post-fs-data.sh service.sh; do cp "$ROOT/$f" "$IMOD/$f"; done
+for f in module.prop common.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh; do cp "$ROOT/$f" "$IMOD/$f"; done
+mkdir -p "$IMOD/webroot"
+for f in index.html script.js style.css workspace-v2.css; do cp "$ROOT/webroot/$f" "$IMOD/webroot/$f"; done
 MODDIR="$IMOD"
 printf '#VERSION=34020\n' > "$INTEGRITY_MANIFEST_FILE"
 integrity_check_once

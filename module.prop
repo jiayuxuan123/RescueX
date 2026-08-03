@@ -1,7 +1,7 @@
 id=RescueX
 name=RescueX 自动救砖
-version=v3.5.1
-versionCode=35001
+version=v3.5.2
+versionCode=35002
 author=jiayuxuan123
-description=[守护中] Miuix 设备健康面板 / 时间线、快照与一次性安全模式 | v3.5.1
+description=[守护中] Miuix 设备健康面板 / 时间线、快照与一次性安全模式 | v3.5.2
 updateJson=https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json
