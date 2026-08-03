@@ -167,6 +167,28 @@ get_watchdog_engine() {
     printf native
 }
 
+get_watchdog_engine_status() {
+    local configured="${WATCHDOG_ENGINE:-shell}" effective=shell reason=shell_selected
+    local bin="$MODDIR/webroot/arm64-v8a/rescuex-watchdog" abi
+    case "$configured" in native|shell) ;; *) configured=shell ;; esac
+    abi=$(getprop ro.product.cpu.abi 2>/dev/null || true)
+    if [ "$configured" = native ]; then
+        if [ "$abi" != arm64-v8a ]; then
+            reason=not_arm64
+        elif [ ! -e "$bin" ]; then
+            reason=missing_binary
+        elif [ ! -x "$bin" ]; then
+            reason=not_executable
+        elif ! "$bin" --self-test >/dev/null 2>&1; then
+            reason=self_test_failed
+        else
+            effective=native
+            reason=ready
+        fi
+    fi
+    printf 'CONFIGURED=%s\nEFFECTIVE=%s\nREASON=%s\nABI=%s\n' "$configured" "$effective" "$reason" "$abi"
+}
+
 # Full rescue is successful only when an actual disable marker was verified.
 # DRY_RUN produces an explicit simulation result but cannot be committed as
 # RESCUED by automated watchdog paths.

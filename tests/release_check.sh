@@ -37,8 +37,14 @@ grep -q "RX_VERSION_CODE=$version_code" common.sh
 grep -q "onboarding_ack" webroot/script.js
 grep -q "module.prop is excluded" v351-safety.sh
 [ ! -e module.prop.bak ] || { printf 'STALE_MODULE_PROP_BACKUP_PRESENT\n' >&2; exit 1; }
-grep -q "const ONBOARDING_NOTICE_REVISION = 'r2';" webroot/script.js
+grep -q "const ONBOARDING_NOTICE_REVISION = 'r3';" webroot/script.js
 grep -q 'versionChanged && noticeChanged' webroot/script.js
+grep -q 'id=\"cfg-watchdog-engine\"' webroot/index.html
+grep -q 'watchdog-engine-choice' webroot/index.html
+grep -q 'checked ? .native. : .shell.' webroot/script.js
+grep -q 'WATCHDOG_ENGINE=${watchdogEngine}' webroot/script.js
+grep -q 'get_watchdog_engine_status' v351-safety.sh
+grep -q 'WATCHDOG_ENGINE=shell' customize.sh
 grep -q "data-action=\"runIntegrityCheck\"" webroot/index.html
 grep -q "'runIntegrityCheck'" webroot/script.js
 grep -q 'data-action="v35RunSimulation"' webroot/index.html

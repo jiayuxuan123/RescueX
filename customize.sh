@@ -7,7 +7,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.5.3"
+RX_VERSION="v3.5.4"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -104,7 +104,7 @@ CONFIG_PRESERVED=false
 WHITELIST_PRESERVED=false
 IS_UPGRADE=false
 
-# v3.5.3: an old integrity daemon must be stopped before the module directory
+# v3.5.4: an old integrity daemon must be stopped before the module directory
 # is replaced. Otherwise it can hash a half-updated tree and overwrite the new
 # integrity status with a false COMPROMISED result.
 stop_previous_integrity_daemon() {
@@ -220,6 +220,7 @@ PATCH_UPDATE_TIMEOUT_SEC=180
 PATCH_FAIL_THRESHOLD=2
 PATCH_AUTO_ROLLBACK=true
 WATCHDOG_POLL_INTERVAL_SEC=2
+WATCHDOG_ENGINE=shell
 INTEGRITY_CHECK_ENABLED=true
 INTEGRITY_INTERVAL_MIN_SEC=60
 CONF
@@ -238,6 +239,9 @@ else
     fi
     if ! grep -q "^WATCHDOG_POLL_INTERVAL_SEC=" "$STATE_DIR/config.conf" 2>/dev/null; then
         echo "WATCHDOG_POLL_INTERVAL_SEC=2" >> "$STATE_DIR/config.conf"
+    fi
+    if ! grep -q "^WATCHDOG_ENGINE=" "$STATE_DIR/config.conf" 2>/dev/null; then
+        echo "WATCHDOG_ENGINE=shell" >> "$STATE_DIR/config.conf"
     fi
     if ! grep -q "^INTEGRITY_CHECK_ENABLED=" "$STATE_DIR/config.conf" 2>/dev/null; then
         echo "INTEGRITY_CHECK_ENABLED=true" >> "$STATE_DIR/config.conf"
@@ -347,7 +351,7 @@ set_perm "$MODPATH/uninstall.sh"     0 0 0700
 set_perm "$MODPATH/action.sh"        0 0 0700
 set_perm "$MODPATH/customize.sh"     0 0 0700
 set_perm "$MODPATH/module.prop" 0 0 0644
-# v3.5.3: remove the obsolete backup that could roll metadata back after an overlay update.
+# v3.5.4: remove the obsolete backup that could roll metadata back after an overlay update.
 rm -f "$MODPATH/module.prop.bak" "$MODPATH/module.prop.tmp."* 2>/dev/null
 set_perm "$MODPATH/README.md" 0 0 0644
 set_perm "$MODPATH/LICENSE"  0 0 0644

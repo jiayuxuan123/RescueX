@@ -73,4 +73,15 @@ printf 'description=[守护中] runtime metadata\n' >> "$IMOD2/module.prop"
 integrity_check_once
 grep -q '^RESULT=OK$' "$INTEGRITY_STATUS_FILE"
 ok 'runtime module metadata is excluded from integrity'
+# 9: the native backend is opt-in and must truthfully report Shell fallback
+# when the current test host is not a verified Android arm64 environment.
+WATCHDOG_ENGINE=shell
+engine_status=$(get_watchdog_engine_status)
+printf '%s\n' "$engine_status" | grep -q '^CONFIGURED=shell$'
+printf '%s\n' "$engine_status" | grep -q '^EFFECTIVE=shell$'
+WATCHDOG_ENGINE=native
+engine_status=$(get_watchdog_engine_status)
+printf '%s\n' "$engine_status" | grep -q '^CONFIGURED=native$'
+printf '%s\n' "$engine_status" | grep -q '^EFFECTIVE=shell$'
+ok 'native backend remains fail-safe with Shell fallback'
 printf 'all %s safety tests passed\n' "$pass"
