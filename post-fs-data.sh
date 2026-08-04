@@ -327,7 +327,7 @@ else
     # 更新救砖计数
     if [ "$trigger_rescue_flag" = "1" ]; then
         PREV_RESCUE_COUNT=$((PREV_RESCUE_COUNT + 1))
-        PREV_LAST_RESCUE_TIME=$(date +%s)
+        PREV_LAST_RESCUE_TIME=$(get_valid_epoch)
     fi
 
     # AUTO_REENABLE: 救砖后下次启动自动恢复
@@ -341,9 +341,22 @@ else
     fi
 fi
 
+# A verified post-fs rescue has already changed module markers. Commit its
+# explicit outcome and reboot into the cleaned module set; do not start a new
+# BOOTING transaction that would hide the rescue from statistics.
+if [ "$trigger_rescue_flag" = "1" ]; then
+    if commit_verified_rescue postfs "$PREV_RESCUE_COUNT"; then
+        request_reboot_after_verified_rescue || true
+        exit 0
+    fi
+    log "救砖动作已验证但状态提交失败；拒绝启动看门狗以免掩盖结果"
+    exit 1
+fi
+
 # 记录本次启动开始
 CURRENT_UPTIME=$(get_uptime_sec)
-CURRENT_BOOT_START=$(date +%s)
+CURRENT_BOOT_START=$(get_valid_epoch)
+BOOT_TOKEN=$(get_boot_token)
 write_status "BOOTING" "$PREV_FAIL_COUNT" "$OTA_DETECTED" 0 "$PREV_RESCUE_COUNT" "$PREV_LAST_RESCUE_TIME" "$CURRENT_BOOT_START" "$CURRENT_UPTIME" "$PATCH_DETECTED"
 
 # v2.7.2: 救砖发生后立即持久化累计值，防止升级/覆盖丢失

@@ -18,22 +18,46 @@ fi
 # 仅 service.sh 使用的本地函数
 # ============================================================
 
+service_boot_token=""
+
+capture_service_boot_token() {
+    service_boot_token=$(grep '^BOOT_TOKEN=' "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
+    [ -n "$service_boot_token" ] || service_boot_token=$(get_boot_token)
+}
+
+service_status_owned() {
+    local current_result current_token
+    current_result=$(grep '^LAST_BOOT_RESULT=' "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
+    current_token=$(grep '^BOOT_TOKEN=' "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
+    if [ "$current_result" != BOOTING ]; then
+        log "拒绝提交成功：状态已被外部流程改为 ${current_result:-UNKNOWN}"
+        return 1
+    fi
+    if [ -n "$current_token" ] && [ "$current_token" != "$service_boot_token" ]; then
+        log "拒绝提交成功：状态 token 已变化（旧=$service_boot_token 新=$current_token）"
+        return 1
+    fi
+    return 0
+}
+
 # 立即标记 service.sh 已执行（兜底）
 mark_service_started() {
     if [ ! -f "$STATUS_FILE" ]; then
         local now up
-        now=$(date +%s)
+        now=$(get_valid_epoch)
         up=$(get_uptime_sec)
         write_status "BOOTING" 0 "false" 1 0 0 "$now" "$up"
         return
     fi
 
-    local boot_start=0 fail_count=0 ota_detected=false rescue_count=0 last_rescue_time=0 uptime_start=0 patch_detected=false
+    local boot_start=0 boot_token="" fail_count=0 ota_detected=false rescue_count=0 last_rescue_time=0 uptime_start=0 patch_detected=false prior_result="UNKNOWN"
     local k v
     while IFS='=' read -r k v; do
         [ -z "$k" ] && continue
         case "$k" in
             BOOT_START) boot_start="$v" ;;
+            BOOT_TOKEN) boot_token="$v" ;;
+            LAST_BOOT_RESULT) prior_result="$v" ;;
             FAIL_COUNT) fail_count="$v" ;;
             OTA_DETECTED) ota_detected="$v" ;;
             RESCUE_COUNT) rescue_count="$v" ;;
@@ -44,6 +68,16 @@ mark_service_started() {
     done < "$STATUS_FILE"
 
     case "$boot_start" in ''|*[!0-9]*) boot_start=0 ;; esac
+    [ "$prior_result" = FAILURE ] || [ "$prior_result" = TEST_FAILURE ] || [ "$prior_result" = RESCUED ] && {
+        log "service 检测到终态 $prior_result，拒绝覆盖并跳过成功等待"
+        sync_to_persist
+        return 1
+    }
+    if [ -n "$boot_token" ] && [ "$boot_token" != "$(get_boot_token)" ]; then
+        log "service 拒绝覆盖其他内核启动事务（BOOT_TOKEN=$boot_token）"
+        return 0
+    fi
+    [ -n "$boot_token" ] || boot_token=$(get_boot_token)
     case "$fail_count" in ''|*[!0-9]*) fail_count=0 ;; esac
     case "$rescue_count" in ''|*[!0-9]*) rescue_count=0 ;; esac
     case "$last_rescue_time" in ''|*[!0-9]*) last_rescue_time=0 ;; esac
@@ -52,6 +86,7 @@ mark_service_started() {
     local tmp="${STATUS_TMP}.$$"
     cat > "$tmp" << STATUS
 BOOT_START=$boot_start
+BOOT_TOKEN=${boot_token:-$(get_boot_token)}
 BOOT_END=0
 SERVICE_STARTED=1
 FAIL_COUNT=$fail_count
@@ -139,8 +174,13 @@ if [ -f "$STATUS_FILE" ]; then
     fi
 fi
 
-# 1. 立即标记 SERVICE_STARTED=1（兜底）
-mark_service_started
+# 1. 立即标记 SERVICE_STARTED=1（兜底）。若外部流程已提交 FAILURE/
+# TEST_FAILURE/RESCUED，则不进入等待循环，更不能把终态改写为成功。
+if ! mark_service_started; then
+    log "===== RescueX $RX_VERSION service 跳过：已有终态 ====="
+    exit 0
+fi
+capture_service_boot_token
 log "===== RescueX $RX_VERSION service 启动 ====="
 v35_health_touch service running "waiting_for_boot_completed"
 
@@ -191,14 +231,44 @@ sleep 3
 log "系统启动完成（等待 ${WAIT_SEC}s + 3s）"
 
 
-# 3. 安全停止看门狗
+# 3. 只有仍持有本次启动事务且状态仍为 BOOTING，才允许提交 SUCCESS。
+# TestTarget/看门狗/其他启动流程写入 FAILURE 或 RESCUED 后，不能被迟到的
+# service 收尾覆盖，否则统计会出现“失败被记成成功”的假象。
+if ! service_status_owned; then
+    current_terminal=$(grep '^LAST_BOOT_RESULT=' "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
+    # A watchdog may already be committing RESCUED and scheduling reboot. Never
+    # kill that watchdog or add a contradictory FAILURE event.
+    if [ "$current_terminal" = "RESCUED" ]; then
+        log "service 发现看门狗已提交 RESCUED，交由救砖重启路径完成"
+        sync_to_persist
+        v35_health_touch service warning "rescued_by_watchdog"
+        exit 0
+    fi
+    stop_watchdog
+    case "$current_terminal" in
+        FAILURE|TEST_FAILURE)
+            append_boot_history "[$(get_log_time)] FAILURE | boot=$service_boot_token | result=$current_terminal" || true
+            ;;
+        *)
+            append_boot_history "[$(get_log_time)] STATE | boot=$service_boot_token | result=OWNERSHIP_LOST" || true
+            ;;
+    esac
+    sync_to_persist
+    v35_health_touch service error "status_ownership_lost"
+    exit 0
+fi
 stop_watchdog
 
 # 4. 原子写入最终状态
-BOOT_END=$(date +%s)
+BOOT_END=$(get_valid_epoch)
 CURRENT_UPTIME=$(get_uptime_sec)
 
-update_status_fields "$BOOT_END" 1 "SUCCESS" 0 "$CURRENT_UPTIME"
+update_status_fields "$BOOT_END" 1 "SUCCESS" 0 "$CURRENT_UPTIME" "$service_boot_token" || {
+    log "启动成功提交被拒绝，保留当前状态"
+    append_boot_history "[$(get_log_time)] FAILURE | boot=$service_boot_token | result=STATUS_COMMIT_REJECTED" || true
+    sync_to_persist
+    exit 0
+}
 
 # 修正可能异常的 LAST_RESCUE_TIME（post-fs-data 阶段时钟未同步）
 fix_last_rescue_time
@@ -224,8 +294,7 @@ fi
 log "启动成功，失败计数已重置"
 
 # 写入 SERVICE 历史记录
-echo "[$(get_log_time)] SERVICE | duration=${BOOT_DURATION}s | result=SUCCESS" >> "$HISTORY_FILE"
-_truncate_history
+append_boot_history "[$(get_log_time)] SERVICE | boot=$service_boot_token | duration=${BOOT_DURATION}s | result=SUCCESS" || log "警告：SERVICE 历史写入失败"
 
 # 启动成功后清除补丁更新标记
 if [ -f "$PATCH_FLAG_FILE" ]; then

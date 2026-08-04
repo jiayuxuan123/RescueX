@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.6"
-RX_VERSION_CODE=35006
+RX_VERSION="v3.5.7"
+RX_VERSION_CODE=35007
 
 # ============================================================
 # 路径初始化
@@ -103,6 +103,29 @@ get_uptime_sec() {
     case "$up" in ''|*[!0-9]*) echo 0 ;; *) echo "$up" ;; esac
 }
 
+# v3.5.7: monotonic boot token. Wall-clock time is not valid for deciding
+# whether a previous boot failed because Android may set RTC after post-fs-data.
+get_boot_token() {
+    local id btime
+    id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -cd 'a-f0-9-')
+    if [ -n "$id" ]; then printf '%s' "$id"; return 0; fi
+    # Fallback must be stable throughout one boot. /proc/uptime changes on every
+    # call and therefore must never be used as an identity token.
+    btime=$(awk '$1 == "btime" { print $2; exit }' /proc/stat 2>/dev/null)
+    case "$btime" in ''|*[!0-9]*) printf '' ;; *) printf 'btime-%s' "$btime" ;; esac
+}
+
+# Return a usable epoch only after RTC has a sane value. Do not persist 1970/1971
+# timestamps as boot or rescue times; monotonic BOOT_TOKEN/uptime fields remain
+# authoritative during early Android init.
+get_valid_epoch() {
+    local epoch
+    epoch=$(date +%s 2>/dev/null)
+    case "$epoch" in ''|*[!0-9]*) epoch=0 ;; esac
+    [ "$epoch" -ge 1577836800 ] 2>/dev/null || epoch=0
+    printf '%s' "$epoch"
+}
+
 # 智能日志时间：系统时钟正常时显示日期，异常时显示 uptime
 # 解决 post-fs-data 阶段 RTC 未同步导致日志显示 1971 年的问题
 # 阈值：1577836800 = 2020-01-01 00:00:00 UTC，小于此值视为时钟异常
@@ -178,9 +201,10 @@ sync_to_persist() {
     mkdir -p "$PERSIST_DIR" 2>/dev/null
     normalize_snapshot_storage
     sync_removable_persist_state_files
-    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log onboarding_ack good_modules.list rescue_level auto_snapshot_session integrity.manifest integrity_upgrade_pending; do
+    for f in config.conf whitelist.conf boot_status patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log onboarding_ack good_modules.list rescue_level auto_snapshot_session integrity.manifest integrity_upgrade_pending; do
         [ -f "$STATE_DIR/$f" ] && cp "$STATE_DIR/$f" "$PERSIST_DIR/$f" 2>/dev/null
     done
+    merge_boot_history_persist 2>/dev/null || true
     # 快照目录
     if [ -d "$SNAPSHOT_DIR" ]; then
         mkdir -p "$PERSIST_DIR/snapshots" 2>/dev/null
@@ -200,6 +224,35 @@ sync_to_persist() {
     fi
     chmod 0700 "$PERSIST_DIR" 2>/dev/null
     [ ! -d "$PERSIST_DIR/v35" ] || chmod -R go-rwx "$PERSIST_DIR/v35" 2>/dev/null
+}
+
+# Merge append-only boot history from both copies. Lines are deduplicated,
+# preserving order; this is safe across module overlays and reboot persistence.
+merge_boot_history_persist() {
+    local local_file="$HISTORY_FILE" persist_file="$PERSIST_DIR/boot_history" tmp
+    local lock="${HISTORY_FILE}.lock" i=0 rc=0
+    mkdir -p "$PERSIST_DIR" "${local_file%/*}" 2>/dev/null || return 1
+    while ! mkdir "$lock" 2>/dev/null; do
+        i=$((i + 1)); [ "$i" -ge 10 ] && return 1
+        sleep 1
+    done
+    if [ ! -f "$local_file" ] && [ -f "$persist_file" ]; then
+        cp "$persist_file" "$local_file" 2>/dev/null || rc=1
+    elif [ -f "$local_file" ] && [ ! -f "$persist_file" ]; then
+        cp "$local_file" "$persist_file" 2>/dev/null || rc=1
+    elif [ -f "$local_file" ] && [ -f "$persist_file" ]; then
+        tmp="${local_file}.merge.$$"
+        cat "$persist_file" "$local_file" | awk 'NF && !seen[$0]++' > "$tmp" 2>/dev/null || rc=1
+        if [ "$rc" -eq 0 ]; then
+            mv -f "$tmp" "$local_file" 2>/dev/null || rc=1
+            [ "$rc" -eq 0 ] && cp "$local_file" "$persist_file" 2>/dev/null || rc=1
+        fi
+        [ "$rc" -eq 0 ] || rm -f "$tmp" 2>/dev/null
+    fi
+    [ ! -f "$local_file" ] || chmod 0600 "$local_file" 2>/dev/null
+    [ ! -f "$persist_file" ] || chmod 0600 "$persist_file" 2>/dev/null
+    rmdir "$lock" 2>/dev/null
+    return "$rc"
 }
 
 # 从外部持久目录恢复数据（模块更新/重装后自动恢复）
@@ -227,6 +280,8 @@ restore_from_persist() {
         cp -R "$PERSIST_DIR/v35" "$STATE_DIR/v35" 2>/dev/null && restored=$((restored + 1))
         chmod -R go-rwx "$STATE_DIR/v35" 2>/dev/null
     fi
+    # boot_history 特殊处理：双向合并，避免旧模块副本隐藏新事件。
+    merge_boot_history_persist 2>/dev/null || true
     # boot_status 特殊处理：合并累计字段
     if [ -f "$PERSIST_DIR/boot_status" ]; then
         _merge_persistent_boot_status
@@ -275,12 +330,13 @@ _merge_persistent_boot_status() {
     # 如果有变化，更新当前文件
     if [ "$final_rescue_count" != "$cur_rescue_count" ] || [ "$final_last_rescue_time" != "$cur_last_rescue_time" ]; then
         # 读取所有字段并重写
-        local boot_start=0 boot_end=0 service_started=0 fail_count=0 result=UNKNOWN
+        local boot_start=0 boot_token="" boot_end=0 service_started=0 fail_count=0 result=UNKNOWN
         local ota_detected=false boot_duration=0 uptime_start=0 uptime_end=0 patch_detected=false
         while IFS='=' read -r k v; do
             [ -z "$k" ] && continue
             case "$k" in
                 BOOT_START) boot_start="$v" ;;
+                BOOT_TOKEN) boot_token="$v" ;;
                 BOOT_END) boot_end="$v" ;;
                 SERVICE_STARTED) service_started="$v" ;;
                 FAIL_COUNT) fail_count="$v" ;;
@@ -293,9 +349,11 @@ _merge_persistent_boot_status() {
             esac
         done < "$STATUS_FILE"
 
+        [ -n "$boot_token" ] || boot_token=$(get_boot_token)
         local tmp="${STATUS_TMP}.$$"
         cat > "$tmp" << STATUS
 BOOT_START=$boot_start
+BOOT_TOKEN=$boot_token
 BOOT_END=$boot_end
 SERVICE_STARTED=$service_started
 FAIL_COUNT=$fail_count
@@ -1241,37 +1299,38 @@ _patch_rollback_unsafe_legacy() {
 # 返回 0=真失败  1=非失败
 # 依赖：PREV_* 变量（需先调用 read_previous_status）、USER_REBOOT_GRACE_SEC（需先调用 read_config）
 is_real_boot_failure() {
-    # 首次安装（INIT 状态）不计入失败
     [ "$PREV_BOOT_RESULT" = "INIT" ] && return 1
-    # 无历史记录（BOOT_START=0）不计入失败
-    [ "$PREV_BOOT_START" = "0" ] && return 1
-    # 上次是看门狗救砖，已处理，不再计入失败
     [ "$PREV_BOOT_RESULT" = "RESCUED" ] && return 1
-    # v3.0.0 BUG FIX: 移除 [ "$PREV_SERVICE_STARTED" = "1" ] && return 1
-    # 原逻辑把 SERVICE_STARTED=1 等同于启动成功，但 service.sh 可能只执行了
-    # mark_service_started() 就被中断（如测试模块触发重启、系统崩溃等），
-    # 此时 BOOT_END=0、result=BOOTING，实际启动并未完成。
-    # 正确判定应依赖 BOOT_END（service.sh 完整执行后才会写入非零值），
-    # 而非 SERVICE_STARTED（仅表示 service.sh 开始执行过）。
-    # BOOT_END 有值 = service.sh 完整执行 = 启动完成
+    if [ "$PREV_BOOT_RESULT" = "FAILURE" ] || [ "$PREV_BOOT_RESULT" = "TEST_FAILURE" ]; then
+        log "上一轮状态明确标记为 $PREV_BOOT_RESULT，计为真实失败（不依赖 RTC/token）"
+        return 0
+    fi
+    [ "$PREV_BOOT_START" = "0" ] && return 1
     [ "$PREV_BOOT_END" != "0" ] && return 1
-    # service.sh 没执行 = 启动中途失败 或 用户主动重启
-    # 用时间窗区分：BOOT_START 距现在很近 = 用户主动重启
-    local now elapsed
-    now=$(date +%s)
+
+    # A boot token proves this is a new kernel boot; do not use RTC here.
+    # If the token is unavailable, retain the conservative legacy grace path.
+    local token now elapsed
+    token=$(get_boot_token)
+    if [ -n "$PREV_BOOT_TOKEN" ] && [ "$PREV_BOOT_TOKEN" != "$token" ]; then
+        log "检测到新的内核启动 token，上一轮未完成启动，计为真实失败"
+        return 0
+    fi
+    now=$(get_valid_epoch)
+    [ "$now" -gt 0 ] || {
+        log "墙上时钟未就绪且无新的 BOOT_TOKEN，保守不计失败"
+        return 1
+    }
+    case "$PREV_BOOT_START" in ''|*[!0-9]*) return 1 ;; esac
     elapsed=$((now - PREV_BOOT_START))
-    # 时钟合理性校验：elapsed 为负或超过 7 天，视为时钟异常，跳过时间窗判定
-    # （时钟异常时无法可靠区分用户重启 vs 真实失败，保守计为非失败，避免误触发救砖）
     if [ "$elapsed" -lt 0 ] || [ "$elapsed" -gt 604800 ]; then
-        log "时钟异常（elapsed=$elapsed），跳过时间窗判定，不计入失败"
+        log "墙上时钟异常（elapsed=$elapsed），改用保守非失败处理"
         return 1
     fi
-    # LOG-004: -lt 改为 -le，等于宽限期也不计入失败
-    if [ "$elapsed" -le "$USER_REBOOT_GRACE_SEC" ]; then
-        log "上次启动仅 $elapsed 秒，疑似用户主动重启，不计入失败"
+    [ "$elapsed" -le "$USER_REBOOT_GRACE_SEC" ] && {
+        log "上一轮仅 $elapsed 秒，疑似用户主动重启，不计入失败"
         return 1
-    fi
-    # 时间窗之外，service.sh 也没执行 = 真的启动失败
+    }
     return 0
 }
 
@@ -1288,9 +1347,10 @@ write_status() {
     local service_started="${4:-0}"
     local rescue_count="${5:-0}"
     local last_rescue_time="${6:-0}"
-    local boot_start="${7:-$(date +%s)}"
+    local boot_start="${7:-$(get_valid_epoch)}"
     local uptime_start="${8:-0}"
     local patch_detected="${9:-false}"
+    local boot_token="${BOOT_TOKEN:-$(get_boot_token)}"
 
     mkdir -p "${STATUS_FILE%/*}" 2>/dev/null
 
@@ -1300,6 +1360,7 @@ write_status() {
     local tmp="${STATUS_TMP}.$$"
     cat > "$tmp" << STATUS
 BOOT_START=$boot_start
+BOOT_TOKEN=$boot_token
 BOOT_END=0
 SERVICE_STARTED=$service_started
 FAIL_COUNT=$fail_count
@@ -1317,11 +1378,10 @@ STATUS
     mv "$tmp" "$STATUS_FILE"
     # SEC-005: 运行时创建的文件显式设置权限
     chmod 0600 "$STATUS_FILE" 2>/dev/null
-    _write_status_json "$boot_start" 0 "$service_started" "$fail_count" "$result" "$ota_detected" "$rescue_count" "$last_rescue_time" 0 "$uptime_start" 0 "$patch_detected"
+    _write_status_json "$boot_start" 0 "$service_started" "$fail_count" "$result" "$ota_detected" "$rescue_count" "$last_rescue_time" 0 "$uptime_start" 0 "$patch_detected" "$boot_token"
 
     # 记录历史
-    echo "[$(get_log_time)] START | fail=$fail_count | ota=$ota_detected | result=$result" >> "$HISTORY_FILE"
-    _truncate_history
+    append_boot_history "[$(get_log_time)] START | boot=$boot_token | fail=$fail_count | ota=$ota_detected | result=$result" || log "警告：启动 START 历史写入失败"
 
     # v2.7.0: 同步到持久目录
     sync_to_persist
@@ -1336,15 +1396,19 @@ update_status_fields() {
     local result="${3:-SUCCESS}"
     local fail_count="${4:-0}"
     local uptime_end="${5:-0}"
+    local expected_token="${6:-}"
+    local current_result="UNKNOWN"
 
     # 读取现有字段（含 PATCH_DETECTED，本函数不改变补丁检测状态，只是原样保留）
-    local boot_start=0 ota_detected=false rescue_count=0 last_rescue_time=0 uptime_start=0 patch_detected=false
+    local boot_start=0 boot_token="" ota_detected=false rescue_count=0 last_rescue_time=0 uptime_start=0 patch_detected=false
     if [ -f "$STATUS_FILE" ]; then
         local k v
         while IFS='=' read -r k v; do
             [ -z "$k" ] && continue
             case "$k" in
                 BOOT_START) boot_start="$v" ;;
+                BOOT_TOKEN) boot_token="$v" ;;
+                LAST_BOOT_RESULT) current_result="$v" ;;
                 OTA_DETECTED) ota_detected="$v" ;;
                 RESCUE_COUNT) rescue_count="$v" ;;
                 LAST_RESCUE_TIME) last_rescue_time="$v" ;;
@@ -1355,6 +1419,15 @@ update_status_fields() {
     fi
 
     case "$boot_start" in ''|*[!0-9]*) boot_start=0 ;; esac
+    [ -n "$boot_token" ] || boot_token=$(get_boot_token)
+    if [ -n "$expected_token" ] && [ -n "$boot_token" ] && [ "$expected_token" != "$boot_token" ]; then
+        log "拒绝提交启动成功：BOOT_TOKEN 已变化（旧=$expected_token 新=$boot_token）"
+        return 2
+    fi
+    if [ "$result" = SUCCESS ] && [ "$current_result" != BOOTING ]; then
+        log "拒绝提交启动成功：当前状态已是 $current_result，避免覆盖外部失败/救砖结果"
+        return 3
+    fi
     case "$rescue_count" in ''|*[!0-9]*) rescue_count=0 ;; esac
     case "$last_rescue_time" in ''|*[!0-9]*) last_rescue_time=0 ;; esac
     case "$uptime_start" in ''|*[!0-9]*) uptime_start=0 ;; esac
@@ -1374,6 +1447,7 @@ update_status_fields() {
     local tmp="${STATUS_TMP}.$$"
     cat > "$tmp" << STATUS
 BOOT_START=$boot_start
+BOOT_TOKEN=$boot_token
 BOOT_END=$boot_end
 SERVICE_STARTED=$service_started
 FAIL_COUNT=$fail_count
@@ -1392,7 +1466,7 @@ STATUS
     # SEC-005: 运行时创建的文件显式设置权限
     chmod 0600 "$STATUS_FILE" 2>/dev/null
 
-    _write_status_json "$boot_start" "$boot_end" "$service_started" "$fail_count" "$result" "$ota_detected" "$rescue_count" "$last_rescue_time" "$boot_duration" "$uptime_start" "$uptime_end" "$patch_detected"
+    _write_status_json "$boot_start" "$boot_end" "$service_started" "$fail_count" "$result" "$ota_detected" "$rescue_count" "$last_rescue_time" "$boot_duration" "$uptime_start" "$uptime_end" "$patch_detected" "$boot_token"
 }
 
 # 内部：写 JSON 状态
@@ -1400,7 +1474,7 @@ STATUS
 _write_status_json() {
     local boot_start="$1" boot_end="$2" service_started="$3" fail_count="$4"
     local result="$5" ota_detected="$6" rescue_count="$7" last_rescue_time="$8" boot_duration="$9"
-    local uptime_start="${10}" uptime_end="${11}" patch_detected="${12:-false}"
+    local uptime_start="${10}" uptime_end="${11}" patch_detected="${12:-false}" boot_token="${13:-$(get_boot_token)}"
     # SEC-004: 归一化布尔字段（确保 JSON 中为 true/false 而非 True/False/1/0）
     case "$ota_detected" in true|1|yes) ota_detected=true ;; *) ota_detected=false ;; esac
     case "$patch_detected" in true|1|yes) patch_detected=true ;; *) patch_detected=false ;; esac
@@ -1410,6 +1484,7 @@ _write_status_json() {
     cat > "$jtmp" << JSON
 {
   "boot_start": $boot_start,
+  "boot_token": "$boot_token",
   "boot_end": $boot_end,
   "service_started": $service_started,
   "fail_count": $fail_count,
@@ -1441,6 +1516,19 @@ _truncate_history() {
     fi
 }
 
+append_boot_history() {
+    local line="$1" lock="${HISTORY_FILE}.lock" i=0
+    mkdir -p "${HISTORY_FILE%/*}" 2>/dev/null || return 1
+    while ! mkdir "$lock" 2>/dev/null; do
+        i=$((i + 1)); [ "$i" -ge 10 ] && return 1
+        sleep 1
+    done
+    printf '%s\n' "$line" >> "$HISTORY_FILE" 2>/dev/null || { rmdir "$lock" 2>/dev/null; return 1; }
+    _truncate_history
+    rmdir "$lock" 2>/dev/null
+    return 0
+}
+
 # 读取上次状态（填充 PREV_* 变量）
 read_previous_status() {
     PREV_BOOT_START=0
@@ -1452,6 +1540,7 @@ read_previous_status() {
     PREV_RESCUE_COUNT=0
     PREV_LAST_RESCUE_TIME=0
     PREV_PATCH_DETECTED="false"
+    PREV_BOOT_TOKEN=""
 
     [ ! -f "$STATUS_FILE" ] && return
 
@@ -1468,6 +1557,7 @@ read_previous_status() {
             RESCUE_COUNT) PREV_RESCUE_COUNT="$v" ;;
             LAST_RESCUE_TIME) PREV_LAST_RESCUE_TIME="$v" ;;
             PATCH_DETECTED) PREV_PATCH_DETECTED="$v" ;;
+            BOOT_TOKEN) PREV_BOOT_TOKEN="$v" ;;
         esac
     done < "$STATUS_FILE"
 
@@ -1493,6 +1583,7 @@ read_status() {
     UPTIME_START=0
     UPTIME_END=0
     PATCH_DETECTED="false"
+    BOOT_TOKEN=""
 
     [ -f "$STATUS_FILE" ] || return 0
 
@@ -1512,6 +1603,7 @@ read_status() {
             UPTIME_START) UPTIME_START="$v" ;;
             UPTIME_END) UPTIME_END="$v" ;;
             PATCH_DETECTED) PATCH_DETECTED="$v" ;;
+            BOOT_TOKEN) BOOT_TOKEN="$v" ;;
         esac
     done < "$STATUS_FILE"
 
@@ -1734,76 +1826,84 @@ stop_watchdog() {
     fi
 }
 
-# 看门狗触发的救砖逻辑（在 watchdog.sh 子进程中调用）
-_watchdog_trigger_unlocked() {
-    log "[WD] 看门狗超时触发救砖"
+# 提交已验证的救砖结果。只有模块 disable 标记已被三层救砖路径验证后才可调用。
+# `requested_count` 供 post-fs-data 传入已计算的累计值；看门狗路径留空时递增当前值。
+commit_verified_rescue() {
+    local source="${1:-unknown}" requested_count="${2:-}" rescue_count=0 now token
+    local boot_start=0 uptime_start=0 ota_detected=false patch_detected=false k v tmp
 
-    # 重新读取配置和白名单（触发时配置可能已变）
-    read_config
-    read_whitelist
-
-    # 三级救砖失败（尤其是 Level 2 被安全降级）时，绝不能伪造 RESCUED 状态或重启。
-    if ! three_level_rescue; then
-        log "[WD] 救砖动作未完成；保留 BOOTING 状态和事务记录，等待人工处理"
-        return 1
-    fi
-
-    # 标记状态为 RESCUED，更新救砖计数
-    local rescue_count=0
     if [ -f "$STATUS_FILE" ]; then
-        local rc
-        rc=$(grep "^RESCUE_COUNT=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
-        case "$rc" in ''|*[!0-9]*) rc=0 ;; esac
-        rescue_count=$((rc + 1))
-    else
-        rescue_count=1
+        while IFS='=' read -r k v; do
+            [ -z "$k" ] && continue
+            case "$k" in
+                BOOT_START) boot_start="$v" ;;
+                BOOT_TOKEN) token="$v" ;;
+                UPTIME_START) uptime_start="$v" ;;
+                OTA_DETECTED) ota_detected="$v" ;;
+                PATCH_DETECTED) patch_detected="$v" ;;
+                RESCUE_COUNT) rescue_count="$v" ;;
+            esac
+        done < "$STATUS_FILE"
     fi
-    local now
-    now=$(date +%s)
+    case "$boot_start" in ''|*[!0-9]*) boot_start=0 ;; esac
+    case "$uptime_start" in ''|*[!0-9]*) uptime_start=0 ;; esac
+    case "$rescue_count" in ''|*[!0-9]*) rescue_count=0 ;; esac
+    case "$requested_count" in ''|*[!0-9]*) rescue_count=$((rescue_count + 1)) ;; *) rescue_count="$requested_count" ;; esac
+    [ -n "$token" ] || token=$(get_boot_token)
+    now=$(get_valid_epoch)
 
-    local tmp="${STATUS_TMP}.$$"
+    tmp="${STATUS_TMP}.rescue.$$"
     cat > "$tmp" << STAT
-BOOT_START=$now
+BOOT_START=$boot_start
+BOOT_TOKEN=$token
 BOOT_END=0
 SERVICE_STARTED=0
 FAIL_COUNT=0
 LAST_BOOT_RESULT=RESCUED
-OTA_DETECTED=false
+OTA_DETECTED=$ota_detected
 RESCUE_COUNT=$rescue_count
 LAST_RESCUE_TIME=$now
 BOOT_DURATION=0
-UPTIME_START=0
+UPTIME_START=$uptime_start
 UPTIME_END=0
-PATCH_DETECTED=false
+PATCH_DETECTED=$patch_detected
 STAT
     sync "$tmp" 2>/dev/null
-    mv "$tmp" "$STATUS_FILE"
-    # SEC-005: 运行时创建的文件显式设置权限
+    mv -f "$tmp" "$STATUS_FILE" || { rm -f "$tmp"; return 1; }
     chmod 0600 "$STATUS_FILE" 2>/dev/null
-
-    _write_status_json "$now" 0 0 0 "RESCUED" false "$rescue_count" "$now" 0 0 0 false
-
-    # v2.5: 记录救砖事件到 history，便于统计面板绘制时间线
-    echo "[$(get_log_time)] RESCUE | count=$rescue_count | result=RESCUED" >> "$HISTORY_FILE"
-    _truncate_history
-
-    # v2.7.0: 记录审计日志
-    log_rescue_action "WATCHDOG_TRIGGER" "timeout, full_rescue executed"
-
-    # v2.7.0: 同步到持久目录
+    _write_status_json "$boot_start" 0 0 0 "RESCUED" "$ota_detected" "$rescue_count" "$now" 0 "$uptime_start" 0 "$patch_detected" "$token"
+    append_boot_history "[$(get_log_time)] RESCUE | boot=$token | count=$rescue_count | source=$source | result=RESCUED" || log "警告：救砖历史写入失败"
+    log_rescue_action "RESCUE_COMMIT" "source=$source,count=$rescue_count"
     sync_to_persist
+    return 0
+}
 
-    log "[WD] 救砖完成，sync 后重启"
-    # sync 加 3 秒超时，防止文件系统损坏时无限阻塞（Sec-2）
+# A rescue action changes module enablement for the following boot. Request one
+# normal reboot only after its durable status commit; if the request fails, leave
+# the explicit RESCUED state and disabled markers for safe manual recovery.
+request_reboot_after_verified_rescue() {
+    log "[RX] 救砖状态已提交，请求一次普通重启"
     sync &
-    SYNC_PID=$!
+    local sync_pid=$!
     sleep 3
-    kill -9 $SYNC_PID 2>/dev/null
-    wait $SYNC_PID 2>/dev/null
+    kill -9 "$sync_pid" 2>/dev/null
+    wait "$sync_pid" 2>/dev/null
+    reboot 2>/dev/null || { log "[RX] 普通重启请求失败；保留 RESCUED 状态，等待人工重启"; return 1; }
+    return 0
+}
 
-    # v3.4 安全策略：自动路径只请求一次普通重启；禁止自动进入 Recovery 或使用 SysRq。
-    log "[WD] 救砖状态已提交，请求一次普通重启"
-    reboot 2>/dev/null || log "[WD] 普通重启请求失败；保留事务记录，等待人工处理"
+# 看门狗触发的救砖逻辑（在 watchdog.sh 子进程中调用）
+_watchdog_trigger_unlocked() {
+    log "[WD] 看门狗超时触发救砖"
+    read_config
+    read_whitelist
+    if ! three_level_rescue; then
+        log "[WD] 救砖动作未完成；保留 BOOTING 状态和事务记录，等待人工处理"
+        return 1
+    fi
+    commit_verified_rescue watchdog || { log "[WD] 救砖动作已验证但状态提交失败"; return 1; }
+    request_reboot_after_verified_rescue || true
+    return 0
 }
 
 # ============================================================
@@ -2443,6 +2543,7 @@ get_dashboard_snapshot() {
     else
         cat << 'EOF'
 BOOT_START=0
+BOOT_TOKEN=
 BOOT_END=0
 SERVICE_STARTED=0
 FAIL_COUNT=0

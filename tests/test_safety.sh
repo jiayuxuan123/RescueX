@@ -111,4 +111,13 @@ ensure_watchdog_executable
 [ -x "$PERM_BIN" ] || exit 1
 [ "$(stat -c '%a' "$PERM_BIN")" = 755 ] || exit 1
 ok 'startup repairs installer-stripped native execute bit'
+# 13: a test/integrity process changing BOOTING to FAILURE cannot be overwritten
+# by the late service success commit.
+RACE_DIR="$TD/race"; mkdir -p "$RACE_DIR"; STATUS_FILE="$RACE_DIR/boot_status"; STATUS_TMP="$RACE_DIR/.boot_status.tmp"; JSON_FILE="$RACE_DIR/boot_status.json"; HISTORY_FILE="$RACE_DIR/boot_history"; PERSIST_DIR="$TD/race-persist"; mkdir -p "$PERSIST_DIR"
+BOOT_TOKEN=race-token
+write_status BOOTING 0 false 0 0 0 0 10 false
+sed 's/^LAST_BOOT_RESULT=.*/LAST_BOOT_RESULT=FAILURE/' "$STATUS_FILE" > "$STATUS_FILE.tmp"; mv "$STATUS_FILE.tmp" "$STATUS_FILE"
+if update_status_fields 20 1 SUCCESS 0 20 race-token; then echo 'race overwrite unexpectedly succeeded' >&2; exit 1; fi
+grep -q '^LAST_BOOT_RESULT=FAILURE$' "$STATUS_FILE" || exit 1
+ok 'late service cannot overwrite external failure'
 printf 'all %s safety tests passed\n' "$pass"
