@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.4.0 - Action 入口
+# RescueX Action 入口（版本由 common.sh 的 RX_VERSION 统一定义）
 # 兼容 KernelSU / KsuWebUI / MMRL / Magisk + APatch
 #
 # v3.0.1: WebUI 不可用时显示 CLI 状态信息（参考 BG 的 action.sh）
@@ -15,6 +15,16 @@ for d in /data/adb/modules/$MODID /data/adb/modules_update/$MODID \
         break
     fi
 done
+
+# 作为最后回退，允许从模块目录直接运行 action.sh（也便于离线诊断）。
+if [ -z "$MODDIR" ]; then
+    case "$0" in */*) action_parent=${0%/*} ;; *) action_parent=. ;; esac
+    action_dir=$(CDPATH= cd -- "$action_parent" 2>/dev/null && pwd)
+    [ -f "$action_dir/common.sh" ] && MODDIR="$action_dir"
+fi
+
+# CLI 必须在加载特性库前声明只读：features-v35.sh 会据此跳过目录创建与 chmod。
+[ "${1:-}" = "--cli" ] && RESCUEX_READ_ONLY=true
 
 # 尝试加载 common.sh 以复用函数
 if [ -n "$MODDIR" ] && [ -f "$MODDIR/common.sh" ]; then
@@ -34,10 +44,93 @@ is_foreground_pkg() {
     dumpsys window windows 2>/dev/null | grep -m1 'mCurrentFocus' | grep -q "$pkg"
 }
 
+# === CLI 管理接口 ===
+# Magisk 没有原生 WebUI；显式 --cli 命令让用户仍可安全地读取诊断数据。
+# 所有当前命令均只读，不会修改模块、配置或救援状态。
+show_cli_help() {
+    cat <<'EOF'
+RescueX CLI（只读）
+用法: action.sh --cli <命令>
+
+命令:
+  status          显示模块与启动状态
+  health          显示看门狗、完整性和目录健康状态
+  timeline        显示最近结构化事件（最新在前）
+  module-changes  显示相对稳定基线的模块变更与风险分数
+  snapshots       显示快照名称、固定状态、时间和模块数
+  safe-mode status 显示一次性安全模式事务状态
+  simulate        预览当前失败计数下可能采取的救援动作
+  rescue status   显示跨 Root 救砖事务状态（只读）
+  rescue restore  恢复当前事务实际写入的 disable 标记（需 --apply）
+  help            显示本帮助
+EOF
+}
+
+run_cli_command() {
+    command=${1:-help}
+    case "$command" in
+        help|-h|--help)
+            show_cli_help
+            ;;
+        status)
+            show_cli_status
+            ;;
+        health)
+            v35_service_health
+            ;;
+        timeline)
+            if [ -f "$V35_TIMELINE_FILE" ]; then v35_list_timeline; fi
+            ;;
+        module-changes)
+            if [ -f "$V35_CHANGES_FILE" ]; then v35_list_module_changes; fi
+            ;;
+        snapshots)
+            v35_list_snapshots_rich
+            ;;
+        safe-mode)
+            [ "${2:-}" = status ] || { echo "用法: action.sh --cli safe-mode status" >&2; return 2; }
+            v35_one_shot_status
+            ;;
+        rescue)
+            case "${2:-status}" in
+                status) rescue_transaction_status ;;
+                restore)
+                    [ "${3:-}" = "--apply" ] || { echo "用法: action.sh --cli rescue restore --apply" >&2; return 2; }
+                    # Only this explicit subcommand may mutate state; override the
+                    # default CLI read-only guard after user confirmation.
+                    RESCUEX_READ_ONLY=false
+                    rescue_transaction_restore_current
+                    ;;
+                *) echo "用法: action.sh --cli rescue status|restore --apply" >&2; return 2 ;;
+            esac
+            ;;
+        simulate)
+            # Fresh installs have no change file yet. Supply an empty read-only
+            # stream so simulation can still emit a valid preview without writes.
+            if [ ! -f "$V35_CHANGES_FILE" ]; then
+                changes_file_backup=$V35_CHANGES_FILE
+                V35_CHANGES_FILE=/dev/null
+                v35_simulate_rescue
+                rc=$?
+                V35_CHANGES_FILE=$changes_file_backup
+                # A missing change file is an expected fresh-install state.
+                # Preserve failures from simulation itself instead of masking them.
+                return "$rc"
+            fi
+            v35_simulate_rescue
+            ;;
+        *)
+            echo "未知 CLI 命令: $command" >&2
+            echo "运行 action.sh --cli help 查看可用命令。" >&2
+            return 2
+            ;;
+    esac
+}
+
 # === CLI 状态显示（WebUI 不可用时的回退） ===
 show_cli_status() {
     echo "========================================="
-    echo "   RescueX v3.4.3 - 模块状态"
+    echo "   RescueX ${RX_VERSION:-未知版本} - 模块状态"
     echo "========================================="
     echo ""
 
@@ -131,7 +224,7 @@ show_cli_status() {
         else
             echo "Root: KernelSU ${KSU_VER:-unknown}"
         fi
-    elif [ "$APATCH" = "true" ]; then
+    elif [ "$APATCH" = "true" ] || [ -d "/data/adb/ap" ] || [ -d "/data/adb/ap_modules" ]; then
         echo "Root: APatch ${APATCH_VER:-unknown}"
     elif [ -d "/data/adb/magisk" ]; then
         echo "Root: Magisk $(magisk -v 2>/dev/null || echo 'unknown')"
@@ -146,6 +239,13 @@ show_cli_status() {
     echo "MMRL:     https://github.com/dergoogler/MMRL/releases"
     echo ""
 }
+
+# 仅在明确请求时启用 CLI，避免破坏 Root 管理器原有 action 行为。
+# 放在 show_cli_status 定义之后，使 status 子命令在 POSIX sh 中可用。
+if [ "${1:-}" = "--cli" ]; then
+    run_cli_command "${2:-help}" "${3:-}"
+    exit $?
+fi
 
 # 尝试启动 WebUI
 webui_launched=0

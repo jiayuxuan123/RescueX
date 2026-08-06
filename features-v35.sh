@@ -15,6 +15,8 @@ v35_init_paths() {
     V35_HEALTH_DIR="$V35_DIR/health.d"
     V35_INTEGRITY_DETAILS="$V35_DIR/integrity-details.tsv"
     V35_EXPORT_DIR="/sdcard/Download"
+    # CLI/模拟调用可安全加载函数库；只读模式绝不创建目录或改变权限。
+    [ "${RESCUEX_READ_ONLY:-false}" = true ] && return 0
     mkdir -p "$V35_DIR" "$V35_SNAPSHOT_META_DIR" "$V35_HEALTH_DIR" 2>/dev/null
     chmod 0700 "$V35_DIR" "$V35_SNAPSHOT_META_DIR" "$V35_HEALTH_DIR" 2>/dev/null
 }
@@ -238,8 +240,24 @@ v35_snapshot_meta_value() {
 
 # file<TAB>name<TAB>pinned<TAB>created<TAB>type<TAB>moduleCount
 v35_list_snapshots_rich() {
-    local snap name pinned created type count
-    for snap in "$AUTO_SNAPSHOT_FILE" $(list_snapshots 2>/dev/null); do
+    local snap name pinned created type count manual_snaps
+    # list_snapshots() normalizes and prunes storage, which is correct for normal
+    # management flows but not for the read-only CLI.
+    if [ "${RESCUEX_READ_ONLY:-false}" = true ]; then
+        # A missing directory is a valid empty state; an existing unreadable
+        # directory is a real diagnostic failure and must not be hidden.
+        [ ! -e "$SNAPSHOT_DIR" ] && manual_snaps=
+        if [ -e "$SNAPSHOT_DIR" ]; then
+            [ -d "$SNAPSHOT_DIR" ] && [ -r "$SNAPSHOT_DIR" ] || return 1
+            manual_snaps=$(ls -1 "$SNAPSHOT_DIR"/snap-*.txt 2>/dev/null | sort -r) || return 1
+        fi
+    else
+        manual_snaps=$(list_snapshots 2>/dev/null)
+    fi
+    for snap in "$AUTO_SNAPSHOT_FILE" $manual_snaps; do
+        # An inaccessible auto snapshot is a real error for diagnostics; a
+        # missing auto snapshot is simply an empty/first-run state.
+        [ -e "$snap" ] && [ ! -r "$snap" ] && return 1
         [ -f "$snap" ] || continue
         name=$(v35_snapshot_meta_value "$snap" NAME); [ -n "$name" ] || name=$(basename "$snap")
         pinned=$(v35_snapshot_meta_value "$snap" PINNED); [ "$pinned" = true ] || pinned=false
@@ -475,7 +493,11 @@ v35_simulate_rescue() {
         done
     done
     printf 'READ_ONLY=true\nACTION=%s\nREASON=%s\nFAIL_COUNT=%s\nTHRESHOLD=%s\nRESCUE_LEVEL=%s\nRECENT_CHANGES=%s\nPROTECTED=%s\nCANDIDATES=%s\n' "$action" "$reason" "$fail" "$threshold" "$level" "$changes" "$protected" "$candidates"
-    [ -f "$V35_CHANGES_FILE" ] && { printf '%s\n' '--CHANGES--'; cat "$V35_CHANGES_FILE"; }
+    if [ -f "$V35_CHANGES_FILE" ]; then
+        printf '%s\n' '--CHANGES--'
+        cat "$V35_CHANGES_FILE" || return 1
+    fi
+    return 0
 }
 
 v35_integrity_details_update() {

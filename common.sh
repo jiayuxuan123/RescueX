@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.7"
-RX_VERSION_CODE=35007
+RX_VERSION="v3.5.8"
+RX_VERSION_CODE=35008
 
 # ============================================================
 # 路径初始化
@@ -72,7 +72,13 @@ _rescuex_init_paths() {
     RESCUED_DISABLED_LIST="$STATE_DIR/rescued_disabled.list"
 
     # v2.7.0: 持久数据目录（模块更新时不会丢失）
-    PERSIST_DIR="/data/adb/rescuex_data"
+    # 测试环境可显式隔离持久状态；生产环境仍使用既有默认目录。
+    PERSIST_DIR="${RESCUEX_PERSIST_DIR:-/data/adb/rescuex_data}"
+
+    # v3.5.8: 跨 Root 救砖事务 journal。每条目标绑定管理器、根目录和实际路径，
+    # 恢复时只删除 RescueX 在该路径写入的 disable 标记。
+    RESCUE_TXN_DIR="$PERSIST_DIR/rescue-transactions"
+    RESCUE_TXN_CURRENT_FILE="$STATE_DIR/rescue-transaction-current"
 
     MODULE_BASE="/data/adb/modules"
     MODULE_BASE_KSU=""
@@ -1667,8 +1673,7 @@ disable_module_at_dir() {
 # 禁用单个模块（考虑白名单 + DRY_RUN）
 # 返回: 0=成功 1=参数错误 2=白名单 3=已禁用
 disable_module_safe() {
-    local mod_dir="$1"
-    local mod_id="$2"
+    local mod_dir="$1" mod_id="$2" base manager started=false
     [ -z "$mod_dir" ] || [ -z "$mod_id" ] && return 1
     [ "$mod_id" = "$SELF_ID" ] && return 1
     is_whitelisted "$mod_id" && return 2
@@ -1678,10 +1683,16 @@ disable_module_safe() {
         log "[DRY_RUN] 将禁用: $mod_id"
         return 0
     fi
-    if disable_module_at_dir "$mod_dir" "$mod_id"; then
-        log "已禁用: $mod_id"
-        # v2.7.0: 记录到救砖禁用列表（供精确恢复使用）
-        echo "$mod_id" >> "$RESCUED_DISABLED_LIST" 2>/dev/null
+    for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
+        [ -n "$base" ] && [ "$mod_dir" = "$base/$mod_id" -o "$mod_dir" = "$base/$mod_id/" ] && { manager=$(rescue_manager_for_base "$base") || return 1; break; }
+    done
+    [ -n "${manager:-}" ] || return 1
+    if [ -z "${RESCUE_TRANSACTION_PATH:-}" ]; then
+        rescue_transaction_begin_targets SUSPECT_DISABLE || return 1
+        started=true
+    fi
+    if rescue_transaction_disable_target "$manager" "$base" "$mod_id" "${mod_dir%/}"; then
+        [ "$started" = true ] && rescue_transaction_finish_targets || true
         return 0
     fi
     log "禁用失败: $mod_id"
@@ -1720,7 +1731,8 @@ progressive_rescue() {
     [ -n "$auto_snap" ] && log "救砖前自动快照: $(basename "$auto_snap")"
 
     local disabled=0
-    local base mod_id mod_dir modules
+    local base mod_id mod_dir modules manager
+    if [ "$DRY_RUN" != true ]; then rescue_transaction_begin_targets PROGRESSIVE_RESCUE || return 1; fi
     for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
         [ -z "$base" ] || [ ! -d "$base" ] && continue
         [ "$disabled" -ge "$count" ] && break
@@ -1731,9 +1743,11 @@ progressive_rescue() {
             [ "$disabled" -ge "$count" ] && break
             mod_dir="$base/$mod_id/"
             [ ! -d "$mod_dir" ] && continue
-            disable_module_safe "$mod_dir" "$mod_id" && disabled=$((disabled + 1))
+            if [ "$DRY_RUN" = true ]; then disable_module_safe "$mod_dir" "$mod_id" && disabled=$((disabled + 1));
+            else manager=$(rescue_manager_for_base "$base") && rescue_transaction_disable_target "$manager" "$base" "$mod_id" "${mod_dir%/}" && disabled=$((disabled + 1)); fi
         done
     done
+    [ "$DRY_RUN" != true ] && rescue_transaction_finish_targets || true
     log "渐进式救砖完成: 禁用 $disabled 个"
     log_rescue_action "PROGRESSIVE_RESCUE" "disabled=$disabled, count=$count"
 }
@@ -1749,7 +1763,8 @@ full_rescue() {
     [ -n "$auto_snap" ] && log "救砖前自动快照: $(basename "$auto_snap")"
 
     local disabled=0 skipped=0
-    local base mod_id mod_dir
+    local base mod_id mod_dir manager
+    [ "$DRY_RUN" = true ] || rescue_transaction_begin_targets FULL_RESCUE || return 1
     for base in "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"; do
         [ -z "$base" ] || [ ! -d "$base" ] && continue
         for mod_dir in "$base"/*/; do
@@ -1762,10 +1777,11 @@ full_rescue() {
                 log "[DRY_RUN] 将禁用: $mod_id"
                 disabled=$((disabled + 1))
             else
-                disable_module_at_dir "$mod_dir" "$mod_id" && { log "已禁用: $mod_id"; disabled=$((disabled + 1)); echo "$mod_id" >> "$RESCUED_DISABLED_LIST" 2>/dev/null; } || log "禁用失败: $mod_id"
+                manager=$(rescue_manager_for_base "$base") && rescue_transaction_disable_target "$manager" "$base" "$mod_id" "${mod_dir%/}" && disabled=$((disabled + 1)) || log "禁用失败: $mod_id"
             fi
         done
     done
+    [ "$DRY_RUN" = true ] || rescue_transaction_finish_targets || true
     log "全量救砖完成: 禁用 $disabled 个, 跳过 $skipped 个"
     log_rescue_action "FULL_RESCUE" "disabled=$disabled, skipped=$skipped"
 }
@@ -3103,10 +3119,21 @@ _rescuex_now_sec() {
 }
 
 _rescuex_atomic_private_write() {
-    local file="$1" content="$2" tmp="${1}.tmp.$$"
+    local file="${1:-}" content="${2:-}" tmp="${1:-}.tmp.$$"
+    [ -n "$file" ] || return 1
     mkdir -p "${file%/*}" 2>/dev/null || return 1
     # 调用方用 \n 构造键值内容；按转义写入，确保状态文件保持一行一个字段。
     printf '%b' "$content" > "$tmp" || return 1
+    chmod 0600 "$tmp" 2>/dev/null
+    sync "$tmp" 2>/dev/null
+    mv "$tmp" "$file" || return 1
+    chmod 0600 "$file" 2>/dev/null
+}
+
+_rescuex_atomic_private_write_stream() {
+    local file="$1" tmp="${1}.tmp.$$"
+    mkdir -p "${file%/*}" 2>/dev/null || return 1
+    cat > "$tmp" || return 1
     chmod 0600 "$tmp" 2>/dev/null
     sync "$tmp" 2>/dev/null
     mv "$tmp" "$file" || return 1
@@ -3171,6 +3198,127 @@ rescue_transaction_fail() {
     log_rescue_action TRANSACTION_ABORT "${RESCUE_TRANSACTION_ID:-unknown}|$reason"
 }
 
+# v3.5.8 cross-root transaction journal. The journal is intentionally line-based
+# and only accepts validated module IDs and fixed manager roots; callers never
+# supply arbitrary paths to restore.
+rescue_manager_for_base() {
+    case "$1" in
+        /data/adb/modules|"$MODULE_BASE") echo MAGISK ;;
+        /data/adb/ksu/modules|"$MODULE_BASE_KSU") [ -n "$MODULE_BASE_KSU" ] && echo KSU ;;
+        /data/adb/ap/modules|/data/adb/ap_modules|"$MODULE_BASE_AP") [ -n "$MODULE_BASE_AP" ] && echo APATCH ;;
+        *) return 1 ;;
+    esac
+}
+
+_rescue_transaction_release_apply_lock() {
+    [ "${RESCUE_TXN_LOCK_OWNED:-false}" = true ] && rescue_lock_release
+    RESCUE_TXN_LOCK_OWNED=false
+}
+
+rescue_transaction_begin_targets() {
+    local action="${1:-RESCUE}" now id dir lock_was_held=false
+    case "$action" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+    [ "${RESCUE_LOCK_HELD:-false}" = true ] && lock_was_held=true
+    rescue_lock_acquire transaction-apply || return 1
+    RESCUE_TXN_LOCK_OWNED=false
+    [ "$lock_was_held" = true ] || RESCUE_TXN_LOCK_OWNED=true
+    now=$(_rescuex_now_sec); id="rx-${now}-$$"; dir="$RESCUE_TXN_DIR/$id"
+    mkdir -p "$dir" "$STATE_DIR" 2>/dev/null || { _rescue_transaction_release_apply_lock; return 1; }
+    chmod 0700 "$RESCUE_TXN_DIR" "$dir" 2>/dev/null
+    { printf 'SCHEMA=1\nID=%s\nACTION=%s\nSTATE=APPLYING\nCREATED_AT=%s\n' "$id" "$action" "$now"; } | _rescuex_atomic_private_write_stream "$dir/meta" || { _rescue_transaction_release_apply_lock; return 1; }
+    : > "$dir/targets" || { _rescue_transaction_release_apply_lock; return 1; }
+    chmod 0600 "$dir/targets" 2>/dev/null
+    printf '%s\n' "$id" | _rescuex_atomic_private_write_stream "$RESCUE_TXN_CURRENT_FILE" || { _rescue_transaction_release_apply_lock; return 1; }
+    RESCUE_TRANSACTION_ID="$id"; RESCUE_TRANSACTION_PATH="$dir"
+    log_rescue_action TRANSACTION_PLAN "$id|$action"
+}
+
+rescue_transaction_disable_target() {
+    local manager="$1" base="$2" id="$3" dir="$4" marker shadow
+    [ -n "${RESCUE_TRANSACTION_PATH:-}" ] || return 1
+    case "$manager" in MAGISK|KSU|APATCH) ;; *) return 1 ;; esac
+    case "$id" in ''|*[!A-Za-z0-9._-]*|"$SELF_ID") return 1 ;; esac
+    [ "$(rescue_manager_for_base "$base" 2>/dev/null)" = "$manager" ] || return 1
+    [ "$dir" = "$base/$id" ] || return 1
+    [ -d "$dir" ] || return 1
+    marker="$dir/disable"; [ -e "$marker" ] && return 2
+    shadow="$base/.$id/disable"; [ -f "$shadow" ] && shadow= || shadow=-
+    # Persist recovery ownership *before* mutating the module. An INTENT record
+    # with no marker is harmless after interruption; with a marker it is enough
+    # evidence for precise recovery, so no module is stranded on journal I/O loss.
+    printf 'MANAGER=%s|BASE=%s|MODULE_ID=%s|PATH=%s|MARKER=%s|SHADOW=%s|PREEXISTING=0|STATE=INTENT\n' "$manager" "$base" "$id" "$dir" "$marker" "$shadow" >> "$RESCUE_TRANSACTION_PATH/targets" || return 1
+    # toybox supports `sync FILE`; some BusyBox/GNU variants only support a
+    # global sync, which is still sufficient before touching the marker.
+    sync "$RESCUE_TRANSACTION_PATH/targets" 2>/dev/null || sync 2>/dev/null || return 1
+    grep -qxF "MANAGER=$manager|BASE=$base|MODULE_ID=$id|PATH=$dir|MARKER=$marker|SHADOW=$shadow|PREEXISTING=0|STATE=INTENT" "$RESCUE_TRANSACTION_PATH/targets" || return 1
+    disable_module_at_dir "$dir" "$id" || return 1
+    [ -f "$marker" ] || return 1
+    printf '%s\n' "$id" >> "$RESCUED_DISABLED_LIST" 2>/dev/null || true
+    log "事务 ${RESCUE_TRANSACTION_ID}: 已禁用 $manager/$id"
+}
+
+rescue_transaction_finish_targets() {
+    [ -n "${RESCUE_TRANSACTION_PATH:-}" ] || return 1
+    sed 's/^STATE=APPLYING$/STATE=APPLIED/' "$RESCUE_TRANSACTION_PATH/meta" | _rescuex_atomic_private_write "$RESCUE_TRANSACTION_PATH/meta" || { _rescue_transaction_release_apply_lock; return 1; }
+    log_rescue_action TRANSACTION_COMMIT "$RESCUE_TRANSACTION_ID|targets-applied"
+    _rescue_transaction_release_apply_lock
+}
+
+rescue_transaction_restore_current() {
+    local id dir line manager base mod path marker shadow pre state restored=0 already_restored=0 unresolved=0 total=0 tmp
+    rescue_lock_acquire transaction-restore || return 1
+    [ -f "$RESCUE_TXN_CURRENT_FILE" ] || { rescue_lock_release; return 1; }
+    id=$(cat "$RESCUE_TXN_CURRENT_FILE" 2>/dev/null | tr -d '\r\n')
+    case "$id" in rx-[0-9]*-[0-9]* ) ;; *) rescue_lock_release; return 1 ;; esac
+    dir="$RESCUE_TXN_DIR/$id"; [ -f "$dir/meta" ] && [ -f "$dir/targets" ] || { rescue_lock_release; return 1; }
+    tmp="$dir/targets.restore.$$"; : > "$tmp" || { rescue_lock_release; return 1; }
+    while IFS= read -r line || [ -n "$line" ]; do
+        manager=$(printf '%s' "$line" | sed -n 's/.*MANAGER=\([^|]*\).*/\1/p')
+        base=$(printf '%s' "$line" | sed -n 's/.*BASE=\([^|]*\).*/\1/p')
+        mod=$(printf '%s' "$line" | sed -n 's/.*MODULE_ID=\([^|]*\).*/\1/p')
+        path=$(printf '%s' "$line" | sed -n 's/.*PATH=\([^|]*\).*/\1/p')
+        marker=$(printf '%s' "$line" | sed -n 's/.*MARKER=\([^|]*\).*/\1/p')
+        pre=$(printf '%s' "$line" | sed -n 's/.*PREEXISTING=\([^|]*\).*/\1/p')
+        state=$(printf '%s' "$line" | sed -n 's/.*STATE=\([^|]*\).*/\1/p')
+        total=$((total + 1))
+        if [ "$state" = RESTORED ]; then printf '%s\n' "$line" >> "$tmp"; already_restored=$((already_restored + 1)); continue; fi
+        case "$manager:$mod:$pre" in MAGISK:*:0|KSU:*:0|APATCH:*:0) ;; *) printf '%s\n' "$line" >> "$tmp"; unresolved=$((unresolved + 1)); continue ;; esac
+        [ "$(rescue_manager_for_base "$base" 2>/dev/null)" = "$manager" ] && [ "$path" = "$base/$mod" ] && [ "$marker" = "$path/disable" ] && [ -d "$path" ] || { printf '%s\n' "$line" >> "$tmp"; unresolved=$((unresolved + 1)); continue; }
+        if [ -f "$marker" ] && rm -f "$marker" 2>/dev/null && [ ! -e "$marker" ]; then
+            printf '%s\n' "${line%|STATE=*}|STATE=RESTORED" >> "$tmp" || { rm -f "$tmp"; rescue_lock_release; return 1; }
+            restored=$((restored + 1))
+        else
+            printf '%s\n' "$line" >> "$tmp"; unresolved=$((unresolved + 1))
+        fi
+    done < "$dir/targets"
+    chmod 0600 "$tmp" 2>/dev/null
+    mv "$tmp" "$dir/targets" || { rm -f "$tmp"; rescue_lock_release; return 1; }
+    if [ "$unresolved" -gt 0 ]; then
+        sed 's/^STATE=.*/STATE=PARTIAL/' "$dir/meta" | _rescuex_atomic_private_write_stream "$dir/meta" || true
+        printf 'RESULT=PARTIAL\nTXN_ID=%s\nRESTORED=%s\nALREADY_RESTORED=%s\nUNRESOLVED=%s\n' "$id" "$restored" "$already_restored" "$unresolved"
+        log_rescue_action REENABLE_PARTIAL "$id|restored=$restored|unresolved=$unresolved"
+        rescue_lock_release
+        return 1
+    fi
+    [ "$total" -gt 0 ] || { rescue_lock_release; return 1; }
+    sed 's/^STATE=.*/STATE=RESTORED/' "$dir/meta" | _rescuex_atomic_private_write_stream "$dir/meta" || { rescue_lock_release; return 1; }
+    rm -f "$RESCUED_DISABLED_LIST" "$RESCUE_TXN_CURRENT_FILE" 2>/dev/null
+    delete_persisted_state_file rescued_disabled.list
+    printf 'RESULT=RESTORED\nTXN_ID=%s\nRESTORED=%s\nALREADY_RESTORED=%s\nUNRESOLVED=0\n' "$id" "$restored" "$already_restored"
+    log_rescue_action REENABLE_EXACT "$id|restored=$restored"
+    rescue_lock_release
+    return 0
+}
+
+rescue_transaction_status() {
+    local id dir state count
+    [ -f "$RESCUE_TXN_CURRENT_FILE" ] || { printf 'STATE=NONE\n'; return 0; }
+    id=$(cat "$RESCUE_TXN_CURRENT_FILE" 2>/dev/null | tr -d '\r\n'); dir="$RESCUE_TXN_DIR/$id"
+    [ -f "$dir/meta" ] || { printf 'STATE=INVALID\n'; return 1; }
+    state=$(sed -n 's/^STATE=//p' "$dir/meta" | head -n1); count=$(wc -l < "$dir/targets" 2>/dev/null || echo 0)
+    printf 'STATE=%s\nTXN_ID=%s\nTARGETS=%s\n' "${state:-INVALID}" "$id" "$count"
+}
+
 read_config() {
     _read_config_legacy
     PATCH_FLAG_TTL_SEC=1800
@@ -3206,8 +3354,14 @@ patch_flag_active() {
     [ -f "$PATCH_FLAG_FILE" ] || return 1
     local now expiry
     now=$(_rescuex_now_sec); expiry=$(grep '^EXPIRES_AT=' "$PATCH_FLAG_FILE" 2>/dev/null | cut -d= -f2)
-    case "$expiry" in ''|*[!0-9]*) clear_patch_flag; return 1 ;; esac
+    case "$expiry" in
+        ''|*[!0-9]*)
+            [ "${RESCUEX_READ_ONLY:-false}" = true ] || clear_patch_flag
+            return 1
+            ;;
+    esac
     [ "$now" -le "$expiry" ] && return 0
+    [ "${RESCUEX_READ_ONLY:-false}" = true ] && return 1
     log "补丁窗口已过期，清理标记"
     clear_patch_flag
     return 1
@@ -3281,7 +3435,13 @@ integrity_check_once() {
 # 证据缺失时不恢复任何模块，也不删除用户/第三方写入的 disable 文件。
 reenable_all() {
     local id base seen=0 enabled=0
-    [ -s "$RESCUED_DISABLED_LIST" ] || { log "拒绝恢复：缺少 rescued_disabled.list"; log_rescue_action REENABLE_REFUSED missing-evidence; return 1; }
+    # v3.5.8: 优先消费带路径归属的事务 journal；禁止按同名模块跨 Root 扫描。
+    [ -f "$RESCUE_TXN_CURRENT_FILE" ] && { rescue_transaction_restore_current; return $?; }
+    [ -s "$RESCUED_DISABLED_LIST" ] || { log "拒绝恢复：缺少救砖事务证据"; log_rescue_action REENABLE_REFUSED missing-evidence; return 1; }
+    log "拒绝恢复：旧版模块 ID 清单无法验证跨 Root 路径归属"
+    log_rescue_action REENABLE_REFUSED legacy-ambiguous-evidence
+    return 1
+    # Legacy code below is intentionally unreachable and retained only for source history.
     while IFS= read -r id || [ -n "$id" ]; do
         case "$id" in ''|\#*|*[!A-Za-z0-9._-]*|"$SELF_ID") continue;; esac
         seen=$((seen+1))

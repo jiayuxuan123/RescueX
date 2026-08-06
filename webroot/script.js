@@ -140,7 +140,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.4.3：修复模块自身隐藏目录的误报。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.5.7：修复救砖状态机与启动统计可靠性。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -457,7 +457,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.4.3: fixes false positives for module self-hidden paths.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.5.7: improves rescue state-machine and boot-statistics reliability.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -698,11 +698,15 @@ class RescueXUI {
         // 环境检测：支持 KSU / Magisk v27+ / MMRL
         const hasKsu = typeof ksu !== 'undefined' && ksu.exec;
         const hasMagisk = typeof magisk !== 'undefined' && magisk.exec;
-        if (!hasKsu && !hasMagisk) {
+        // APatch WebUI hosts commonly expose the Magisk-compatible bridge; use
+        // it when present while the shell backend detects APatch paths itself.
+        const hasApatch = typeof apatch !== 'undefined' && apatch.exec;
+        if (!hasKsu && !hasMagisk && !hasApatch) {
             this.showEnvError();
             return;
         }
-        this.bridge = hasKsu ? ksu : magisk;
+        this.bridge = hasKsu ? ksu : (hasMagisk ? magisk : apatch);
+        this.isApatch = !!hasApatch && !hasKsu && !hasMagisk;
         // 记录标记而非在别处直接比较 `this.bridge === ksu`：
         // 若宿主容器压根未声明 ksu 变量（而非设为 undefined），直接引用会在严格模式下抛 ReferenceError
         this.isKsu = !!hasKsu;
@@ -712,7 +716,7 @@ class RescueXUI {
             'deselectAllModules', 'disableAllModules', 'exportConfig', 'exportFullState',
             'exportLog', 'generateDecisionReport', 'generateReport', 'importConfig',
             'openReleases', 'openRepository', 'rebootDevice',
-            'reenableAllModules', 'refreshAuditLog', 'refreshLog', 'refreshModules',
+            'reenableAllModules', 'refreshRescueTransaction', 'restoreRescueTransaction', 'refreshAuditLog', 'refreshLog', 'refreshModules',
             'refreshStats', 'removeCustomDir', 'resetRescueLevel', 'restoreBaseline',
             'restoreSnapshot', 'runIntegrityCheck', 'saveConfig', 'saveCustomDirs', 'saveGoodModules',
             'saveWhitelist', 'selectAllModules', 'showFeatures', 'showPrivacy',
@@ -2144,7 +2148,44 @@ done`;
         this.showLoading(false);
     }
 
+    async refreshRescueTransaction() {
+        const out = await this.exec(`MODDIR="${this.modulePath}"; . "$MODDIR/common.sh"; rescue_transaction_status`);
+        const state = (out.match(/^STATE=(.*)$/m) || [])[1] || 'NONE';
+        const id = (out.match(/^TXN_ID=(.*)$/m) || [])[1] || '-';
+        const targets = (out.match(/^TARGETS=(.*)$/m) || [])[1] || '0';
+        this.toast(this.lang === 'zh' ? `救砖事务：${state}，目标 ${targets} 个（${id}）` : `Rescue transaction: ${state}, ${targets} targets (${id})`, state === 'PARTIAL' ? 'error' : '');
+        return out;
+    }
+
+    async restoreRescueTransaction() {
+        const status = await this.refreshRescueTransaction();
+        if (!/^STATE=(APPLIED|PARTIAL)$/m.test(status)) {
+            this.toast(this.lang === 'zh' ? '没有可恢复的 RescueX 救砖事务。' : 'No recoverable RescueX transaction.', 'error');
+            return;
+        }
+        const confirm = await this.confirmDialog(
+            this.t('confirm_title'),
+            this.lang === 'zh' ? '仅恢复 RescueX 在当前事务中实际写入的 disable 标记；不会启用你或其他工具手动禁用的模块。是否继续？' : 'Only disable markers written by RescueX in the current transaction will be removed. Manually disabled modules stay disabled. Continue?',
+            this.t('btn_confirm'), 'btn-filled'
+        );
+        if (!confirm) return;
+        this.showLoading(true);
+        try {
+            const out = await this.execStrict(`MODDIR="${this.modulePath}"; . "$MODDIR/common.sh"; RESCUEX_READ_ONLY=false; rescue_transaction_restore_current`);
+            const restored = (out.match(/^RESTORED=(\d+)$/m) || [])[1] || '0';
+            this.toast(this.lang === 'zh' ? `已安全恢复 ${restored} 个模块。` : `Safely restored ${restored} module(s).`, 'success');
+            this.loadStatus(); this.loadDisabledModules();
+        } catch (e) { this.toast(this.t('save_failed'), 'error'); }
+        this.showLoading(false);
+    }
+
     async reenableAllModules() {
+        // Legacy UI entry now delegates to transaction-bound recovery; it never
+        // scans all disable markers across Root managers.
+        return this.restoreRescueTransaction();
+    }
+
+    async legacyReenableAllModulesRemoved() {
         const confirm = await this.confirmDialog(
             this.t('confirm_title'),
             this.t('confirm_enable_all'),

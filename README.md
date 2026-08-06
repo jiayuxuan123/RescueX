@@ -12,9 +12,9 @@ Android 自动救砖模块，兼容 Magisk / KernelSU / APatch。
 - **OTA / 补丁更新识别**：区分底层 OTA 和系统补丁，自动调整超时策略
 - **嫌疑模块追踪**：启动成功后记录已知良好模块列表，下次失败时对比差异精确定位
 - **模块快照管理**：手动拍快照记录当前模块启用状态，出问题可一键回滚
-- **稳定基线恢复**：一键恢复上次成功启动时的已知良好模块状态
+- **跨 Root 救砖事务恢复**：记录 RescueX 实际写入的模块路径与禁用标记；只恢复本事务拥有的标记，避免跨 Magisk / KernelSU / SukiSU / APatch 误启用同名或用户手动禁用的模块
 - **自适应启动超时**：基于历史启动耗时移动平均动态调整超时，减少低配设备误报
-- **WebUI 管理面板**：在 KernelSU 管理器 / Magisk v27+ / MMRL 中直接管理所有功能
+- **WebUI 与 CLI 管理**：在 KernelSU 管理器 / MMRL 中使用完整 WebUI；Magisk 可通过 `action.sh --cli` 查看诊断、快照、安全模式与救援预览
 - **轻量完整性自检**：启动成功后建立 RescueX 核心文件 SHA-256 基线，独立守护进程检查
 - **一次性安全模式**：预禁用非白名单模块，下次启动进入安全模式，成功后按事务清单精确恢复
 - **诊断包导出**：一键生成脱敏诊断包（zip/tar.gz/txt 自动适配），可选打开 GitHub Issue 草稿
@@ -28,6 +28,16 @@ Android 自动救砖模块，兼容 Magisk / KernelSU / APatch。
 
 - 仓库地址：https://github.com/jiayuxuan123/RescueX
 - 在线更新：模块已内置 `updateJson`，发布新版 Release 后可直接从管理器检查更新
+
+### CLI（Magisk 与自动化诊断）
+
+无原生 WebUI 的环境可在 root shell 中运行：
+
+```sh
+sh /data/adb/modules/RescueX/action.sh --cli help
+```
+
+全部 CLI 命令均为只读，不会修改模块、配置或救援状态。支持 `status`、`health`、`timeline`、`module-changes`、`snapshots`、`safe-mode status` 和 `simulate`；其中 `simulate` 只预览基于当前状态可能执行的救援策略。
 
 ### 兼容性
 
