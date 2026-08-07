@@ -1,7 +1,11 @@
 {
-  "version": "v3.5.8",
-  "versionCode": 35008,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.8/RescueX-v3.5.8.zip",
+  "version": "v3.5.9",
+  "versionCode": 35009,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.9/RescueX-v3.5.9.zip",
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md",
-  "sha256": "d77403c8fd7c5a7cf2f6cf853993a3be80a641b9a1ef56e08416019514d2dd06"
+  "recommended": true,
+  "priority": "critical",
+  "updateMessage": "强烈推荐立即更新：v3.5.9 修复早期 Android 启动 RTC 尚未同步时，连续重启失败可能被错误忽略、导致三级自动救砖不触发的底层严重漏洞。该问题已在真实设备同类状态下复现并修复。",
+  "releaseNotes": "修复 BOOT_START=0 提前短路 BOOT_TOKEN 失败判定；新版协议公告 revision r4，阅读倒计时 8 秒。",
+  "sha256": "ca844f6982b88ea972a8dab960608b5f176d24e93dc0f0be00d579f2aa9bbf1f"
 }

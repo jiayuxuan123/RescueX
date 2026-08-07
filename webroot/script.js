@@ -1,4 +1,4 @@
-/* RescueX v3.5.7 - WebUI 控制器
+/* RescueX v3.5.9 - WebUI 控制器
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -12,12 +12,12 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.5.7';
-const APP_VERSION_CODE = 35007;
-// The notice is shown only when both the app version and the notice content
-// revision changed. Exiting/re-entering, or a version-only update with the same
-// notice text, stays silent. Bump rN only when this notice content changes.
-const ONBOARDING_NOTICE_REVISION = 'r3';
+const APP_VERSION = 'v3.5.9';
+const APP_VERSION_CODE = 35009;
+// v3.5.9 has a material boot-rescue safety notice. Bump this revision whenever
+// acknowledgement text changes so existing installs must read it once.
+const ONBOARDING_NOTICE_REVISION = 'r4';
+const ONBOARDING_COUNTDOWN_SECONDS = 8;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const UPDATE_JSON_URL = 'https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json';
@@ -131,8 +131,8 @@ const I18N = {
         manager: '管理器',
         source_code: '源码',
         update_notice: '更新公告',
-        update_notice_title: '完整性自检与脚本误报修复',
-        update_notice_desc: '新增默认开启的轻量完整性自检，修复模块清理自身 /data 工作目录时被误判为擦除分区的问题，并收紧核心路径与格式化命令识别。',
+        update_notice_title: '强烈推荐更新：修复启动救砖底层严重漏洞',
+        update_notice_desc: 'v3.5.9 修复早期启动阶段 RTC 未同步时，连续重启可能被错误忽略、导致三级救砖不触发的底层漏洞。已测试通过，强烈建议立即更新。',
         check_update: '检查更新',
         checking_update: '正在检查更新...',
         update_available: '发现新版本',
@@ -140,7 +140,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.5.7：修复救砖状态机与启动统计可靠性。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.5.9：修复早期启动 RTC 未同步时三级救砖可能不触发的底层严重漏洞。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -448,8 +448,8 @@ const I18N = {
         manager: 'Manager',
         source_code: 'Source',
         update_notice: 'Update Notice',
-        update_notice_title: 'Integrity checks and script false-positive fixes',
-        update_notice_desc: 'Adds lightweight integrity checks enabled by default, prevents module-private /data cleanup from being treated as partition wiping, and tightens core-path and format-command detection.',
+        update_notice_title: 'Strongly recommended: critical boot-rescue fix',
+        update_notice_desc: 'v3.5.9 fixes a low-level bug where early boot with an unsynchronized RTC could ignore consecutive reboots and prevent three-level rescue from triggering. Immediate update is strongly recommended.',
         check_update: 'Check Updates',
         checking_update: 'Checking updates...',
         update_available: 'Update available',
@@ -457,7 +457,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.5.7: improves rescue state-machine and boot-statistics reliability.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.5.9 fixes a critical early-boot rescue trigger bug when RTC is not synchronized.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -927,7 +927,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.7' : 'Automatic Boot Rescue v3.5.7';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.9' : 'Automatic Boot Rescue v3.5.9';
     }
 
     openExternal(url) {
@@ -962,10 +962,12 @@ done`;
             const remoteCode = parseInt(meta.versionCode, 10) || 0;
             const remoteVersion = String(meta.version || '').trim() || '--';
             if (remoteCode > APP_VERSION_CODE) {
+                const recommended = meta.recommended === true || meta.priority === 'critical';
+                const reason = String(meta.updateMessage || meta.releaseNotes || '').trim();
                 const message = this.lang === 'zh'
-                    ? `当前版本 ${APP_VERSION}，发现新版本 ${remoteVersion}。是否前往 Releases 页面查看？`
-                    : `Current version ${APP_VERSION}. New version ${remoteVersion} is available. Open Releases page?`;
-                const confirm = await this.confirmDialog(this.t('update_available'), message, this.t('btn_confirm'), 'btn-filled');
+                    ? `${recommended ? '【强烈推荐更新】' : ''}当前版本 ${APP_VERSION}，发现新版本 ${remoteVersion}。${reason ? `\n\n${reason}` : ''}\n\n是否前往 Releases 页面查看？`
+                    : `${recommended ? '[Strongly Recommended] ' : ''}Current version ${APP_VERSION}. New version ${remoteVersion} is available.${reason ? `\n\n${reason}` : ''}\n\nOpen the Releases page?`;
+                const confirm = await this.confirmDialog(this.t('update_available'), message, this.t('btn_confirm'), recommended ? 'btn-danger' : 'btn-filled');
                 if (confirm) this.openExternal(RELEASES_URL);
                 return;
             }
@@ -1021,7 +1023,7 @@ done`;
     }
 
     // === 桥接执行（统一 KSU / Magisk v27）===
-    // v3.5.7: execStrict preserves exit code, timeout and exception state.
+    // v3.5.9: execStrict preserves exit code, timeout and exception state.
     // The legacy exec() wrapper remains for read-only calls that only need stdout.
     execStrict(cmd, timeoutMs = EXEC_DEFAULT_TIMEOUT_MS) {
         return new Promise(resolve => {
@@ -1949,7 +1951,7 @@ mv -f "${this.stateDir}/config.conf.tmp.$$" "${this.stateDir}/config.conf"
     }
 
     async importConfig() {
-        // v3.5.7: Atomic import. Write to temp files, validate, then rename.
+        // v3.5.9: Atomic import. Write to temp files, validate, then rename.
         // If either file fails, neither is committed.
         const filepath = '/sdcard/Download/rescuex-config.json';
         const confirm = await this.confirmDialog(
@@ -2002,7 +2004,7 @@ mv -f "${this.stateDir}/config.conf.tmp.$$" "${this.stateDir}/config.conf"
                 if (!/^[A-Za-z0-9+/=]*$/.test(wlB64)) { this.toast(this.t('config_import_failed'), 'error'); return; }
             }
 
-            // v3.5.7: Write both to temp, then rename atomically.
+            // v3.5.9: Write both to temp, then rename atomically.
             const tmpConf = `${this.confFile}.import.$$`;
             const tmpWl = `${this.whitelistFile}.import.$$`;
             const writeConf = `printf '%s' '${configB64}' | base64 -d > '${tmpConf}' && echo OK`;
@@ -2563,7 +2565,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
 
     // === v2.5: 首次运行引导 ===
     async checkFirstRun() {
-        // v3.5.7: acknowledgement is stored in the module state and in the
+        // v3.5.9: acknowledgement is stored in the module state and in the
         // external RescueX persistence directory. Do not use WebView
         // localStorage as the source of truth: some managers recreate the
         // WebView storage whenever the user exits the page.
@@ -2579,7 +2581,9 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
             try { acknowledged = JSON.parse(result.stdout.trim()); } catch (_) {}
             const versionChanged = !acknowledged || acknowledged.version !== APP_VERSION;
             const noticeChanged = !acknowledged || acknowledged.noticeRevision !== ONBOARDING_NOTICE_REVISION;
-            if (versionChanged && noticeChanged) {
+            // Show a changed safety notice even when the app version itself did
+            // not change; acknowledgement is valid only for this exact revision.
+            if (versionChanged || noticeChanged) {
                 this.showOnboarding(JSON.stringify({ version: APP_VERSION, noticeRevision: ONBOARDING_NOTICE_REVISION }), this.onboardingAckFile);
             }
         } catch (e) { /* bridge unavailable: stay quiet */ }
@@ -2605,7 +2609,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         logo.textContent = 'R';
         const title = document.createElement('h2');
         title.style.cssText = 'margin:0;font-size:18px;color:var(--rx-ink,#1a1a2e);';
-        title.textContent = isZh ? 'RescueX v3.5.7 更新须知' : 'RescueX v3.5.7 Update Notice';
+        title.textContent = isZh ? 'RescueX v3.5.9 更新须知' : 'RescueX v3.5.9 Update Notice';
         header.appendChild(logo);
         header.appendChild(title);
 
@@ -2625,8 +2629,8 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 '一次性安全模式会立即写入禁用标记，下次启动生效，请确认后再布防。',
                 '覆盖更新后如遇异常，可先卸载模块（会彻底清理状态和持久化目录）再重新安装。',
             ]},
-            { title: '✨ v3.5.7 新增与修复', items: [
-                '安全修复：慢启动不再残留 BOOTING 导致误救砖；救砖必须验证 disable 标记实际写入。',
+            { title: '✨ v3.5.9 新增与修复', items: [
+                '严重安全修复：早期启动 RTC 未同步时，连续重启不再被错误忽略；BOOT_TOKEN 变化会可靠触发三级救砖。',
                 '修复覆盖更新时旧自检守护未停止、运行时元数据变化导致的完整性误报。',
                 '安全修复：一次性安全模式部分恢复失败时保留 journal，不再删除恢复证据。',
                 'Bridge 协议：execStrict 保留退出码/超时/异常，写操作不再因空输出误报成功。',
@@ -2652,8 +2656,8 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 'One-shot safe mode writes disable markers immediately, effective on next boot. Confirm before arming.',
                 'If issues occur after an update, uninstall the module (which fully cleans state and persist dirs) then reinstall.',
             ]},
-            { title: '✨ v3.5.7 New & Fixed', items: [
-                'Fixed: Slow boot no longer leaves stale BOOTING state causing false rescue triggers.',
+            { title: '✨ v3.5.9 New & Fixed', items: [
+                'Critical fix: early boot with an unsynchronized RTC no longer ignores consecutive reboots; a changed BOOT_TOKEN reliably triggers three-level rescue.',
                 'Fixed: Update-time integrity false positives caused by an old daemon and runtime metadata changes.',
                 'Fixed: Full rescue must verify disable markers are actually written before committing success.',
                 'Fixed: One-shot safe mode retains journal on partial restore failure.',
@@ -2700,7 +2704,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         const btn = document.createElement('button');
         btn.className = 'btn btn-filled';
         btn.style.cssText = 'width:100%;opacity:0.4;pointer-events:none;';
-        btn.textContent = isZh ? '我已阅读并了解（20s）' : 'I have read and understood (20s)';
+        btn.textContent = isZh ? `我已阅读并了解（${ONBOARDING_COUNTDOWN_SECONDS}s）` : `I have read and understood (${ONBOARDING_COUNTDOWN_SECONDS}s)`;
         footer.appendChild(hint);
         footer.appendChild(countdown);
         footer.appendChild(btn);
@@ -2713,7 +2717,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
 
         // Track scroll state
         let scrolledToBottom = false;
-        let countdownSec = 20;
+        let countdownSec = ONBOARDING_COUNTDOWN_SECONDS;
         let timer = null;
 
         const updateButton = () => {
@@ -2768,7 +2772,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
             try { localStorage.setItem('rescuex_onboarding_notice_ack', contentHash); } catch (_) {}
             if (timer) { clearInterval(timer); timer = null; }
             overlay.remove();
-            this.toast(isZh ? '欢迎使用 RescueX v3.5.7' : 'Welcome to RescueX v3.5.7', 'success');
+            this.toast(isZh ? '欢迎使用 RescueX v3.5.9' : 'Welcome to RescueX v3.5.9', 'success');
         };
 
         updateButton();
@@ -3530,7 +3534,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         }
     }
 
-    // === v3.5.7: diagnostics and one-shot safe mode ===
+    // === v3.5.9: diagnostics and one-shot safe mode ===
     v35Command(functionName) {
         const allowed = new Set([
             'v35_simulate_rescue', 'v35_one_shot_status',
@@ -3569,7 +3573,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
     }
 
     async v35ArmOneShotSafeMode() {
-        // v3.5.7: Show a dry-run diff preview before the user confirms.
+        // v3.5.9: Show a dry-run diff preview before the user confirms.
         this.showLoading(true);
         let preview = '';
         try {
@@ -3582,7 +3586,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         const message = this.lang === 'zh'
             ? `将立即写入本次事务涉及模块的禁用标记，下一次启动进入安全模式；成功启动后仅按事务清单恢复。不会触碰白名单或原先已禁用模块。\n\n=== 变更预览 ===\n${diffSummary}\n\n是否确认执行？`
             : `This writes disable markers for this transaction now, starts the next boot in safe mode, and restores only markers recorded in its journal after a successful boot. Whitelisted and previously disabled modules are untouched.\n\n=== Change Preview ===\n${diffSummary}\n\nConfirm and execute?`;
-        // v3.5.7: Double confirmation for danger operations.
+        // v3.5.9: Double confirmation for danger operations.
         if (!await this.confirmDialog(this.t('confirm_title'), message, this.t('btn_confirm'), 'btn-danger')) return;
         const finalMsg = this.lang === 'zh'
             ? '这是高风险操作：写入的禁用标记将在下次启动生效。确定要继续吗？'
@@ -3642,7 +3646,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 this.toast(this.lang === 'zh'
                     ? `诊断包已生成（${ext}）${path ? '，路径: ' + path : ''}`
                     : `Diagnostic bundle created (${ext})${path ? ', path: ' + path : ''}`, 'success', 6000);
-                // v3.5.7: Offer to open a pre-filled GitHub Issue draft.
+                // v3.5.9: Offer to open a pre-filled GitHub Issue draft.
                 const issueMsg = this.lang === 'zh'
                     ? '是否打开 GitHub Issue 草稿页面？诊断包不会被自动上传，你需要手动决定是否附加文件。'
                     : 'Open a pre-filled GitHub Issue draft? The diagnostic bundle will NOT be auto-uploaded; you decide whether to attach it.';
@@ -3675,7 +3679,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         this.showLoading(false);
     }
 
-    // === v3.0.1: APP 解冻 (v3.5.7: 使用 execStrict 区分拒绝/失败/无项目) ===
+    // === v3.0.1: APP 解冻 (v3.5.9: 使用 execStrict 区分拒绝/失败/无项目) ===
     async unfreezeApps() {
         const confirm = await this.confirmDialog(
             this.t('confirm_title'),
@@ -3708,7 +3712,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
 
     // === v3.0.1: 锁定脚本目录 ===
     // === Modal ===
-    // v3.5.7: default focus is Cancel (not OK). Danger dialogs use Escape/Enter
+    // v3.5.9: default focus is Cancel (not OK). Danger dialogs use Escape/Enter
     // to dismiss, never to confirm. Focus is trapped inside the overlay.
     confirmDialog(title, message, okText, okClass) {
         return new Promise(resolve => {
@@ -3762,13 +3766,13 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                     else ok.focus();
                 }
             };
-            // v3.5.7: default focus is Cancel, not OK.
+            // v3.5.9: default focus is Cancel, not OK.
             setTimeout(() => cancel.focus(), 50);
         });
     }
 }
 
-// v3.5.7: Restore instantiation that was accidentally removed.
+// v3.5.9: Restore instantiation that was accidentally removed.
 window.RescueXUI = RescueXUI;
 
 if (document.readyState === 'loading') {

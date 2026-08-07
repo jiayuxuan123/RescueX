@@ -20,6 +20,9 @@ SNAPSHOT_DIR="$STATE_DIR/snapshots"
 AUTO_SNAPSHOT_FILE="$SNAPSHOT_DIR/auto-snap-latest.txt"
 AUTO_SNAPSHOT_SESSION_FILE="$STATE_DIR/auto_snapshot_session"
 PERSIST_DIR="$TMP_ROOT/persist"
+RESCUE_TXN_DIR="$PERSIST_DIR/rescue-transactions"
+RESCUE_TXN_CURRENT_FILE="$STATE_DIR/rescue-transaction-current"
+RESCUED_DISABLED_LIST="$STATE_DIR/rescued_disabled.list"
 MODULE_BASE="$TMP_ROOT/modules"
 MODULE_BASE_KSU="$TMP_ROOT/modules_ksu"
 MODULE_BASE_AP="$TMP_ROOT/modules_ap"
@@ -229,14 +232,17 @@ grep -q '^#VERSION=0$' "$INTEGRITY_MANIFEST_FILE" || fail "完整性基线应包
 grep -q ' common.sh$' "$INTEGRITY_MANIFEST_FILE" || fail "完整性基线应包含核心文件"
 pass "integrity manifest creation"
 
+# Legacy ID-only evidence must refuse recovery; a path-bound transaction is
+# required to avoid removing a same-ID disable marker from another Root manager.
 mkdir -p "$MODULE_BASE_KSU/duplicate" "$MODULE_BASE_AP/duplicate"
 : > "$MODULE_BASE_KSU/duplicate/disable"
 : > "$MODULE_BASE_AP/duplicate/disable"
-RESCUED_DISABLED_LIST="$STATE_DIR/rescued_disabled.list"
 printf 'duplicate\n' > "$RESCUED_DISABLED_LIST"
-reenable_all >/dev/null
-assert_file_missing "$MODULE_BASE_KSU/duplicate/disable" "同名 KSU 模块应恢复"
-assert_file_missing "$MODULE_BASE_AP/duplicate/disable" "同名 APatch 模块应恢复"
-pass "duplicate manager module recovery"
+if reenable_all >/dev/null; then
+    fail "旧 ID 清单不应跨 Root 恢复同名模块"
+fi
+assert_file_exists "$MODULE_BASE_KSU/duplicate/disable" "旧清单不得移除 KSU 标记"
+assert_file_exists "$MODULE_BASE_AP/duplicate/disable" "旧清单不得移除 APatch 标记"
+pass "legacy duplicate recovery remains fail-closed"
 
 printf 'ALL TESTS PASSED\n'

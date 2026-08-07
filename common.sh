@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.8"
-RX_VERSION_CODE=35008
+RX_VERSION="v3.5.9"
+RX_VERSION_CODE=35009
 
 # ============================================================
 # 路径初始化
@@ -75,7 +75,7 @@ _rescuex_init_paths() {
     # 测试环境可显式隔离持久状态；生产环境仍使用既有默认目录。
     PERSIST_DIR="${RESCUEX_PERSIST_DIR:-/data/adb/rescuex_data}"
 
-    # v3.5.8: 跨 Root 救砖事务 journal。每条目标绑定管理器、根目录和实际路径，
+    # 跨 Root 救砖事务 journal：每条目标绑定管理器、根目录和实际路径，
     # 恢复时只删除 RescueX 在该路径写入的 disable 标记。
     RESCUE_TXN_DIR="$PERSIST_DIR/rescue-transactions"
     RESCUE_TXN_CURRENT_FILE="$STATE_DIR/rescue-transaction-current"
@@ -109,7 +109,7 @@ get_uptime_sec() {
     case "$up" in ''|*[!0-9]*) echo 0 ;; *) echo "$up" ;; esac
 }
 
-# v3.5.7: monotonic boot token. Wall-clock time is not valid for deciding
+# v3.5.9: monotonic boot token. Wall-clock time is not valid for deciding
 # whether a previous boot failed because Android may set RTC after post-fs-data.
 get_boot_token() {
     local id btime
@@ -1311,17 +1311,20 @@ is_real_boot_failure() {
         log "上一轮状态明确标记为 $PREV_BOOT_RESULT，计为真实失败（不依赖 RTC/token）"
         return 0
     fi
-    [ "$PREV_BOOT_START" = "0" ] && return 1
     [ "$PREV_BOOT_END" != "0" ] && return 1
 
-    # A boot token proves this is a new kernel boot; do not use RTC here.
-    # If the token is unavailable, retain the conservative legacy grace path.
+    # A boot token is authoritative even when RTC has not been initialized yet.
+    # post-fs-data commonly writes BOOT_START=0 during early Android init; that
+    # must not short-circuit a valid kernel-boot identity transition.
+    # If either token is unavailable, retain the conservative legacy grace path.
     local token now elapsed
     token=$(get_boot_token)
-    if [ -n "$PREV_BOOT_TOKEN" ] && [ "$PREV_BOOT_TOKEN" != "$token" ]; then
+    if [ -n "$PREV_BOOT_TOKEN" ] && [ -n "$token" ] && [ "$PREV_BOOT_TOKEN" != "$token" ]; then
         log "检测到新的内核启动 token，上一轮未完成启动，计为真实失败"
         return 0
     fi
+
+    [ "$PREV_BOOT_START" = "0" ] && return 1
     now=$(get_valid_epoch)
     [ "$now" -gt 0 ] || {
         log "墙上时钟未就绪且无新的 BOOT_TOKEN，保守不计失败"
@@ -3198,7 +3201,7 @@ rescue_transaction_fail() {
     log_rescue_action TRANSACTION_ABORT "${RESCUE_TRANSACTION_ID:-unknown}|$reason"
 }
 
-# v3.5.8 cross-root transaction journal. The journal is intentionally line-based
+# Cross-root transaction journal. The journal is intentionally line-based
 # and only accepts validated module IDs and fixed manager roots; callers never
 # supply arbitrary paths to restore.
 rescue_manager_for_base() {
@@ -3435,7 +3438,7 @@ integrity_check_once() {
 # 证据缺失时不恢复任何模块，也不删除用户/第三方写入的 disable 文件。
 reenable_all() {
     local id base seen=0 enabled=0
-    # v3.5.8: 优先消费带路径归属的事务 journal；禁止按同名模块跨 Root 扫描。
+    # 优先消费带路径归属的事务 journal；禁止按同名模块跨 Root 扫描。
     [ -f "$RESCUE_TXN_CURRENT_FILE" ] && { rescue_transaction_restore_current; return $?; }
     [ -s "$RESCUED_DISABLED_LIST" ] || { log "拒绝恢复：缺少救砖事务证据"; log_rescue_action REENABLE_REFUSED missing-evidence; return 1; }
     log "拒绝恢复：旧版模块 ID 清单无法验证跨 Root 路径归属"

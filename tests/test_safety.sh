@@ -3,28 +3,77 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 TD=$(mktemp -d)
 trap 'rm -rf "$TD"' EXIT
-# Source definitions, then isolate every mutable path under a temporary sandbox.
-MODDIR="$ROOT"
+# Load libraries without creating runtime files in the source checkout, then
+# point every mutable state path at this test's private sandbox.
+MODDIR="$ROOT"; RESCUEX_PERSIST_DIR="$TD/persist"; RESCUEX_READ_ONLY=true
 . "$ROOT/common.sh"
+RESCUEX_READ_ONLY=false
 STATE_DIR="$TD/state"; PERSIST_DIR="$TD/persist"; SNAPSHOT_DIR="$STATE_DIR/snapshots"
-CONF_FILE="$STATE_DIR/config.conf"; LOG_FILE="$STATE_DIR/rescue.log"; STATUS_FILE="$STATE_DIR/boot_status"; STATUS_TMP="$STATE_DIR/.boot_status.tmp"
+CONF_FILE="$STATE_DIR/config.conf"; LOG_FILE="$STATE_DIR/rescue.log"; HISTORY_FILE="$STATE_DIR/boot_history"
+STATUS_FILE="$STATE_DIR/boot_status"; STATUS_TMP="$STATE_DIR/.boot_status.tmp"; JSON_FILE="$STATE_DIR/boot_status.json"
+WATCHDOG_PID_FILE="$STATE_DIR/watchdog_pid"; GOOD_MODULES_FILE="$STATE_DIR/good_modules.list"; SUSPECT_LOG="$STATE_DIR/suspect_modules.log"
 RESCUED_DISABLED_LIST="$STATE_DIR/rescued_disabled.list"; PATCH_FLAG_FILE="$STATE_DIR/patch_update_flag"; PATCH_FAIL_COUNT_FILE="$STATE_DIR/patch_fail_count"; PATCH_BACKUP_DIR="$STATE_DIR/patch_backup"
 RESCUE_LEVEL_FILE="$STATE_DIR/rescue_level"; INTEGRITY_MANIFEST_FILE="$STATE_DIR/integrity.manifest"; INTEGRITY_STATUS_FILE="$STATE_DIR/integrity_status"
+RESCUE_TXN_DIR="$PERSIST_DIR/rescue-transactions"; RESCUE_TXN_CURRENT_FILE="$STATE_DIR/rescue-transaction-current"
 MODULE_BASE="$TD/modules"; MODULE_BASE_KSU=""; MODULE_BASE_AP=""; SELF_ID=RescueX
-SAFE_CUSTOM_DIR_PREFIXES="$TD/safe"
+SAFE_CUSTOM_DIR_PREFIXES="$PERSIST_DIR $STATE_DIR $SNAPSHOT_DIR $TD/safe"
 mkdir -p "$STATE_DIR" "$PERSIST_DIR" "$SNAPSHOT_DIR" "$MODULE_BASE/modA" "$MODULE_BASE/modB" "$TD/safe"
+command -v v35_init_paths >/dev/null 2>&1 && v35_init_paths
 : > "$MODULE_BASE/modA/disable"; : > "$MODULE_BASE/modB/disable"
 pass=0
 ok() { pass=$((pass+1)); printf 'ok %s\n' "$1"; }
+# 0: A kernel-token transition is a real failure even when RTC is still zero.
+# Android commonly reaches post-fs-data before date is synchronized; BOOT_TOKEN
+# is the authoritative identity in that window and must not be short-circuited
+# by PREV_BOOT_START=0.
+(
+    PREV_BOOT_RESULT=BOOTING
+    PREV_BOOT_START=0
+    PREV_BOOT_END=0
+    PREV_BOOT_TOKEN=previous-kernel-token
+    USER_REBOOT_GRACE_SEC=30
+    get_boot_token() { printf '%s' current-kernel-token; }
+    get_valid_epoch() { printf '%s' 0; }
+    log() { :; }
+    is_real_boot_failure || { echo 'token transition with zero RTC was ignored' >&2; exit 1; }
+)
+ok 'early boot token transition counts as failure'
+# A missing/equal token must still use the conservative RTC path.
+(
+    PREV_BOOT_RESULT=BOOTING
+    PREV_BOOT_START=0
+    PREV_BOOT_END=0
+    PREV_BOOT_TOKEN=same-kernel-token
+    USER_REBOOT_GRACE_SEC=30
+    get_boot_token() { printf '%s' same-kernel-token; }
+    get_valid_epoch() { printf '%s' 0; }
+    log() { :; }
+    if is_real_boot_failure; then
+        echo 'equal token with zero RTC was incorrectly counted' >&2
+        exit 1
+    fi
+)
+ok 'equal boot token remains conservative'
 # 1: Missing evidence must not re-enable any module.
 if reenable_all; then echo 'reenable unexpectedly succeeded' >&2; exit 1; fi
 [ -f "$MODULE_BASE/modA/disable" ] && [ -f "$MODULE_BASE/modB/disable" ] || exit 1
 ok 'missing evidence is fail-closed'
-# 2: Exact evidence only restores recorded module.
+# 2: A legacy ID-only list is intentionally fail-closed; recovery needs a
+# path-bound transaction so duplicate module IDs across Root managers
+# cannot be accidentally re-enabled.
 printf 'modA\n' > "$RESCUED_DISABLED_LIST"
+if reenable_all; then echo 'legacy id-only recovery unexpectedly succeeded' >&2; exit 1; fi
+[ -f "$MODULE_BASE/modA/disable" ] && [ -f "$MODULE_BASE/modB/disable" ] || exit 1
+ok 'legacy id-only recovery remains fail-closed'
+# 3: Exact transaction evidence restores only the marker RescueX created.
+rm -f "$MODULE_BASE/modA/disable"
+rescue_transaction_begin_targets test-restore
+rescue_transaction_disable_target MAGISK "$MODULE_BASE" modA "$MODULE_BASE/modA"
+rescue_transaction_finish_targets
+[ -f "$MODULE_BASE/modA/disable" ] && [ -f "$MODULE_BASE/modB/disable" ] || exit 1
 reenable_all
 [ ! -f "$MODULE_BASE/modA/disable" ] && [ -f "$MODULE_BASE/modB/disable" ] || exit 1
-ok 'exact evidence restores only recorded module'
+ok 'transaction evidence restores only owned module'
 # 3: Expired patch flag is removed, never treated as active.
 printf 'SCHEMA=2\nEXPIRES_AT=1\n' > "$PATCH_FLAG_FILE"
 if patch_flag_active; then echo 'expired patch flag accepted' >&2; exit 1; fi

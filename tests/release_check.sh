@@ -34,11 +34,19 @@ grep -q "const APP_VERSION = '$version';" webroot/script.js
 grep -q "const APP_VERSION_CODE = $version_code;" webroot/script.js
 grep -q "RX_VERSION=\"$version\"" common.sh
 grep -q "RX_VERSION_CODE=$version_code" common.sh
+grep -q "RX_VERSION=\"$version\"" customize.sh
+grep -q "$version" webroot/index.html
+grep -q "$version" webroot/arm64-v8a/README.txt
+grep -q "$version" native/rescuex_watchdog.c
 grep -q "onboarding_ack" webroot/script.js
 grep -q "module.prop is excluded" v351-safety.sh
 [ ! -e module.prop.bak ] || { printf 'STALE_MODULE_PROP_BACKUP_PRESENT\n' >&2; exit 1; }
-grep -q "const ONBOARDING_NOTICE_REVISION = 'r3';" webroot/script.js
-grep -q 'versionChanged && noticeChanged' webroot/script.js
+grep -q "const ONBOARDING_NOTICE_REVISION = 'r4';" webroot/script.js
+grep -q 'versionChanged || noticeChanged' webroot/script.js
+grep -q 'const ONBOARDING_COUNTDOWN_SECONDS = 8;' webroot/script.js
+grep -q 'recommended' update.json
+grep -q 'priority' update.json
+grep -q 'updateMessage' update.json
 grep -q 'id=\"cfg-watchdog-engine\"' webroot/index.html
 grep -q 'watchdog-engine-choice' webroot/index.html
 grep -q 'checked ? .native. : .shell.' webroot/script.js
