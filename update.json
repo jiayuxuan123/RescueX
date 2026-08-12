@@ -5,7 +5,7 @@
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md",
   "recommended": true,
   "priority": "normal",
-  "updateMessage": "修复模块更新队列劫持导致的误重启问题；移除 /data/adb/modules_update 劫持逻辑；BOOT_TOKEN 仅用于诊断；DRY_RUN 默认开启。",
-  "releaseNotes": "归档修复版：修复更新队列劫持导致的误重启和误救砖问题；service.sh 保护 RESCUED 状态不被覆盖。",
-  "sha256": "fa7aad2f0ccc54d1e2f15070776489e5aea026aab4aa75a5fde510475ef351c0"
+  "updateMessage": "修复模块更新队列劫持导致的误重启问题；移除 /data/adb/modules_update 劫持逻辑；BOOT_TOKEN 仅用于诊断；DRY_RUN 默认开启；修复启动统计成功率超过100%的bug。",
+  "releaseNotes": "归档修复版：修复更新队列劫持导致的误重启和误救砖问题；service.sh 保护 RESCUED 状态不被覆盖；启动统计增加数据完整性验证。",
+  "sha256": "f54d0719cd8fe38b44aacc3f75de5afbf80f6e9170897f17fc0a9e2f0792f6fd"
 }
