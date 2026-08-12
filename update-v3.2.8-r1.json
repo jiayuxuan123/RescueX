@@ -1,0 +1,11 @@
+{
+  "version": "v3.2.8-r1",
+  "versionCode": 32801,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.2.8-r1/RescueX-v3.2.8-r1.zip",
+  "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md",
+  "recommended": false,
+  "priority": "normal",
+  "updateMessage": "归档修复版：移除模块更新队列劫持逻辑，防止安装/更新其他模块时误触发重启和全量救砖。默认 DRY_RUN=true，需用户显式确认后才开启实际救砖。",
+  "releaseNotes": "修复更新队列劫持问题；保守失败判定；看门狗仅在验证的 disable marker 写入后提交 RESCUED。",
+  "sha256": "13238f1d290adb371f4f3dbf38311ecb05c48bba0fcc72917fbe36bc1b82f66b"
+}
