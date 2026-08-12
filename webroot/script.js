@@ -959,14 +959,52 @@ done`;
             const response = await fetch(UPDATE_JSON_URL, { cache: 'no-store' });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const meta = await response.json();
-            const remoteCode = parseInt(meta.versionCode, 10) || 0;
-            const remoteVersion = String(meta.version || '').trim() || '--';
+            // v3.5.9-r1: support patches array for archived fix releases
+            let remoteCode = parseInt(meta.versionCode, 10) || 0;
+            let remoteVersion = String(meta.version || '').trim() || '--';
+            let recommended = meta.recommended === true || meta.priority === 'critical';
+            let reason = String(meta.updateMessage || meta.releaseNotes || '').trim();
+            if (meta.patches && Array.isArray(meta.patches) && meta.patches.length > 0) {
+                let patchMatch = null;
+                for (const patch of meta.patches) {
+                    const code = parseInt(patch.versionCode, 10) || 0;
+                    if (code > APP_VERSION_CODE) {
+                        if (!patchMatch || code > parseInt(patchMatch.versionCode, 10)) {
+                            patchMatch = patch;
+                        }
+                    }
+                }
+                if (patchMatch) {
+                    recommended = patchMatch.recommended === true || patchMatch.priority === 'critical';
+                    reason = String(patchMatch.updateMessage || patchMatch.releaseNotes || '').trim();
+                    const msg = this.lang === 'zh'
+                        ? `${recommended ? '【强烈推荐更新】' : ''}当前版本 ${APP_VERSION}，发现新版本 ${patchMatch.version}。${reason ? `
+
+${reason}` : ''}
+
+是否前往 Releases 页面查看？`
+                        : `${recommended ? '[Strongly Recommended] ' : ''}Current version ${APP_VERSION}. New version ${patchMatch.version} is available.${reason ? `
+
+${reason}` : ''}
+
+Open the Releases page?`;
+                    const confirm = await this.confirmDialog(this.t('update_available'), msg, this.t('btn_confirm'), recommended ? 'btn-danger' : 'btn-filled');
+                    if (confirm) this.openExternal(RELEASES_URL);
+                    return;
+                }
+            }
             if (remoteCode > APP_VERSION_CODE) {
-                const recommended = meta.recommended === true || meta.priority === 'critical';
-                const reason = String(meta.updateMessage || meta.releaseNotes || '').trim();
                 const message = this.lang === 'zh'
-                    ? `${recommended ? '【强烈推荐更新】' : ''}当前版本 ${APP_VERSION}，发现新版本 ${remoteVersion}。${reason ? `\n\n${reason}` : ''}\n\n是否前往 Releases 页面查看？`
-                    : `${recommended ? '[Strongly Recommended] ' : ''}Current version ${APP_VERSION}. New version ${remoteVersion} is available.${reason ? `\n\n${reason}` : ''}\n\nOpen the Releases page?`;
+                    ? `${recommended ? '【强烈推荐更新】' : ''}当前版本 ${APP_VERSION}，发现新版本 ${remoteVersion}。${reason ? `
+
+${reason}` : ''}
+
+是否前往 Releases 页面查看？`
+                    : `${recommended ? '[Strongly Recommended] ' : ''}Current version ${APP_VERSION}. New version ${remoteVersion} is available.${reason ? `
+
+${reason}` : ''}
+
+Open the Releases page?`;
                 const confirm = await this.confirmDialog(this.t('update_available'), message, this.t('btn_confirm'), recommended ? 'btn-danger' : 'btn-filled');
                 if (confirm) this.openExternal(RELEASES_URL);
                 return;
