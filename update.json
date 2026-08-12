@@ -1,33 +1,11 @@
 {
-  "version": "v3.5.9",
-  "versionCode": 35009,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.9/RescueX-v3.5.9.zip",
+  "version": "v3.5.9-r1",
+  "versionCode": 35010,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.9-r1/RescueX-v3.5.9-r1.zip",
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md",
   "recommended": true,
-  "priority": "critical",
-  "updateMessage": "强烈推荐立即更新：v3.5.9 修复早期 Android 启动 RTC 尚未同步时，连续重启失败可能被错误忽略、导致三级自动救砖不触发的底层严重漏洞。该问题已在真实设备同类状态下复现并修复。",
-  "releaseNotes": "修复 BOOT_START=0 提前短路 BOOT_TOKEN 失败判定；新版协议公告 revision r4，阅读倒计时 8 秒。",
-  "sha256": "ca844f6982b88ea972a8dab960608b5f176d24e93dc0f0be00d579f2aa9bbf1f",
-  "patches": [
-    {
-      "version": "v3.5.9-r1",
-      "versionCode": 35010,
-      "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.9-r1/RescueX-v3.5.9-r1.zip",
-      "recommended": false,
-      "priority": "normal",
-      "updateMessage": "归档修复版：移除模块更新队列劫持逻辑，防止安装/更新其他模块时误触发重启和全量救砖。BOOT_TOKEN 仅用于诊断，不再单独触发救砖判定。",
-      "releaseNotes": "修复更新队列劫持导致的误重启问题；DRY_RUN 语义收紧，默认开启演练模式；service.sh 保护 RESCUED 状态不被覆盖。",
-      "sha256": "fa7aad2f0ccc54d1e2f15070776489e5aea026aab4aa75a5fde510475ef351c0"
-    },
-    {
-      "version": "v3.2.8-r1",
-      "versionCode": 32801,
-      "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.2.8-r1/RescueX-v3.2.8-r1.zip",
-      "recommended": false,
-      "priority": "normal",
-      "updateMessage": "归档修复版：移除模块更新队列劫持逻辑，防止安装/更新其他模块时误触发重启和全量救砖。默认 DRY_RUN=true，需用户显式确认后才开启实际救砖。",
-      "releaseNotes": "修复更新队列劫持问题；保守失败判定；看门狗仅在验证的 disable marker 写入后提交 RESCUED。",
-      "sha256": "13238f1d290adb371f4f3dbf38311ecb05c48bba0fcc72917fbe36bc1b82f66b"
-    }
-  ]
+  "priority": "normal",
+  "updateMessage": "修复模块更新队列劫持导致的误重启问题；移除 /data/adb/modules_update 劫持逻辑；BOOT_TOKEN 仅用于诊断；DRY_RUN 默认开启。",
+  "releaseNotes": "归档修复版：修复更新队列劫持导致的误重启和误救砖问题；service.sh 保护 RESCUED 状态不被覆盖。",
+  "sha256": "fa7aad2f0ccc54d1e2f15070776489e5aea026aab4aa75a5fde510475ef351c0"
 }
