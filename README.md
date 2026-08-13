@@ -108,9 +108,6 @@ RescueX 的兼容适配与 WebUI 能力离不开以下开源项目，在此一�
 | [FoxMagiskModuleManager (FoxMMM)](https://github.com/Fox2Code/FoxMagiskModuleManager) | Fox2Code / Androidacy | 开源 Magisk 模块管理器 |
 | [KsuWebUIStandalone](https://github.com/5ec1cff/KsuWebUIStandalone) | 5ec1cff | 让原版 Magisk 查看模块 WebUI 的独立应用 |
 
-> **特别感谢 [KsuWebUIStandalone](https://github.com/5ec1cff/KsuWebUIStandalone)**：
-> 自 v3.5.10 起，安装器会在原版 Magisk 环境提示该应用，原版 Magisk 用户也能获得完整的 WebUI 体验。
-
 ## 许可证
 
 [MIT](LICENSE)
