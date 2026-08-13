@@ -1,11 +1,11 @@
 {
-  "version": "v3.5.10-r1",
-  "versionCode": 350201,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.10-r1/RescueX-v3.5.10-r1.zip",
+  "version": "v3.5.10-r2",
+  "versionCode": 350202,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.10-r2/RescueX-v3.5.10-r2.zip",
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md",
   "recommended": true,
   "priority": "normal",
-  "updateMessage": "v3.5.10-r1 治本修复启动统计：成功次数改为配对计数（只统计能配对到 START 的 SERVICE 行），救砖/失败会正确反映在成功率上，不再虚高 100%。版本号规则：同级修复用 -rN 后缀（350201）。",
-  "releaseNotes": "配对计数修复统计虚高；孤儿 SERVICE 行不再计入成功；重复行只计一次。versionCode=350201。",
-  "sha256": "c78634937971d3061f00087363dd7dabbeb29bd914dcdd9e650ee252682e48bf"
+  "updateMessage": "v3.5.10-r2 治本修复启动统计：按 boot token 终态聚合，救砖/失败会正确反映在成功率上（不再永远100%）；最近救砖时间不再显示从未（早期RTC时间修正）；救砖次数下限补偿。versionCode=350202。",
+  "releaseNotes": "postfs 救砖无 START 行也计入总启动；fix_last_rescue_time 允许 0+已救砖时修正；统计回退状态文件时间。",
+  "sha256": "0aa3d3c96b7d83ee4bd2cdfce255b00178395513099e0796056c315121d8ba63"
 }
