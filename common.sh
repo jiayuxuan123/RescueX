@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.4.0 - common.sh
+# RescueX v3.5.9-r1 - common.sh
 # 共享函数库，被 post-fs-data.sh / service.sh / watchdog.sh / uninstall.sh source
 # 所有函数在此唯一定义，杜绝跨脚本重复实现导致的不一致
 #
@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.9"
-RX_VERSION_CODE=35009
+RX_VERSION="v3.5.9-r2"
+RX_VERSION_CODE=35011
 
 # ============================================================
 # 路径初始化
@@ -1301,45 +1301,38 @@ _patch_rollback_unsafe_legacy() {
 # 启动失败判定
 # ============================================================
 
-# 判断上次启动是否真的失败（考虑首次安装、看门狗救砖、用户主动重启的时间窗）
-# 返回 0=真失败  1=非失败
-# 依赖：PREV_* 变量（需先调用 read_previous_status）、USER_REBOOT_GRACE_SEC（需先调用 read_config）
+# Conservative failure evidence: BOOT_TOKEN identifies a new kernel boot but
+# cannot identify why the prior BOOTING transaction ended. Root-manager updates,
+# OTA handoffs, user reboots, and module overlays can all change the token.
+# Keep it for observability/ownership checks; require explicit FAILURE or the
+# legacy valid-RTC grace-window evidence before counting a rescue failure.
 is_real_boot_failure() {
     [ "$PREV_BOOT_RESULT" = "INIT" ] && return 1
     [ "$PREV_BOOT_RESULT" = "RESCUED" ] && return 1
     if [ "$PREV_BOOT_RESULT" = "FAILURE" ] || [ "$PREV_BOOT_RESULT" = "TEST_FAILURE" ]; then
-        log "上一轮状态明确标记为 $PREV_BOOT_RESULT，计为真实失败（不依赖 RTC/token）"
+        log "上一轮状态明确标记为 $PREV_BOOT_RESULT，计为真实失败"
         return 0
     fi
     [ "$PREV_BOOT_END" != "0" ] && return 1
-
-    # A boot token is authoritative even when RTC has not been initialized yet.
-    # post-fs-data commonly writes BOOT_START=0 during early Android init; that
-    # must not short-circuit a valid kernel-boot identity transition.
-    # If either token is unavailable, retain the conservative legacy grace path.
-    local token now elapsed
-    token=$(get_boot_token)
-    if [ -n "$PREV_BOOT_TOKEN" ] && [ -n "$token" ] && [ "$PREV_BOOT_TOKEN" != "$token" ]; then
-        log "检测到新的内核启动 token，上一轮未完成启动，计为真实失败"
-        return 0
-    fi
-
     [ "$PREV_BOOT_START" = "0" ] && return 1
+
+    local now elapsed
     now=$(get_valid_epoch)
     [ "$now" -gt 0 ] || {
-        log "墙上时钟未就绪且无新的 BOOT_TOKEN，保守不计失败"
+        log "墙上时钟未就绪，保守不计失败（BOOT_TOKEN 仅作日志证据）"
         return 1
     }
     case "$PREV_BOOT_START" in ''|*[!0-9]*) return 1 ;; esac
     elapsed=$((now - PREV_BOOT_START))
     if [ "$elapsed" -lt 0 ] || [ "$elapsed" -gt 604800 ]; then
-        log "墙上时钟异常（elapsed=$elapsed），改用保守非失败处理"
+        log "墙上时钟异常（elapsed=$elapsed），保守不计失败"
         return 1
     fi
-    [ "$elapsed" -le "$USER_REBOOT_GRACE_SEC" ] && {
+    if [ "$elapsed" -le "$USER_REBOOT_GRACE_SEC" ]; then
         log "上一轮仅 $elapsed 秒，疑似用户主动重启，不计入失败"
         return 1
-    }
+    fi
+    log "上一轮未完成且已超过用户重启宽限期（elapsed=${elapsed}s），计为真实失败"
     return 0
 }
 
@@ -2530,6 +2523,12 @@ compute_boot_stats() {
     else
         rescued=$status_rescued
         last_rescue_time=$status_last_rescue_time
+    fi
+
+    # v3.5.9-r1: 数据完整性验证 - 防止 boot_history 重复导致 SUCCESS > TOTAL
+    if [ "$success" -gt "$total" ]; then
+        log "[STATS] 检测到异常数据: SUCCESS=$success > TOTAL=$total，重置 SUCCESS=$total"
+        success=$total
     fi
 
     # 启动失败次数按实际启动次数估算：总启动 - 成功启动

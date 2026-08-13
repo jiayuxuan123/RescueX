@@ -1,16 +1,53 @@
-# RescueX v3.5.9 — 强烈推荐更新：启动救砖底层严重漏洞修复
+# RescueX v3.5.9-r1 -- update-transaction and false-rescue correction
 
-> **强烈推荐所有 v3.5.x 用户立即更新。** 修复早期 Android 启动 RTC 尚未同步时可能跳过连续失败判定、导致三级自动救砖不触发的底层安全可靠性漏洞。
+This build preserves the v3.5.9 UI, transaction journal, exact recovery,
+integrity checks, diagnostics, and optional native watchdog. It changes only the
+unsafe update/restart boundary and the failure classification that amplified it.
 
-## 修复
+## Fixed
 
-- 修复 Android 早期启动时 RTC 尚未可用、`BOOT_START=0` 导致真实连续重启被提前当作“非失败”的问题。
-- 现在优先比较内核 `BOOT_TOKEN`：只要上一轮未完成且 token 已变化，即使墙钟尚未同步也会计为真实失败。
-- 保留 token 缺失或相同 token 时的保守 RTC/用户主动重启宽限逻辑，避免扩大误判范围。
-- 当渐进救砖开启时，满足该失败条件会进入三级救砖：第 0 级无法定位嫌疑模块时自动落到第 1 级，写入已验证的模块 `disable` 标记并提交 `RESCUED` 状态。
+- RescueX no longer moves, replays, removes, or reboots from Root manager update
+  queues such as `modules_update`. Magisk, KernelSU, APatch, and their frontends
+  remain the only owners of their own update transaction and restart policy.
+- A changed `BOOT_TOKEN` is now observability and ownership evidence only; it is
+  not sufficient by itself to count a previous `BOOTING` transaction as a boot
+  failure. Normal manager-driven updates, OTA handoffs, and short user reboots
+  therefore cannot directly enter the progressive/full-rescue path.
+- Failure counting requires an explicit `FAILURE`/`TEST_FAILURE` state, or an
+  incomplete prior boot with a valid RTC timestamp outside the configured user
+  reboot grace period. Early boot with an unusable RTC stays fail-closed against
+  automatic module changes.
+- First-install `DRY_RUN=true` is retained and the installer output now matches
+  that behavior. The native watchdog source also has portable fallback guards;
+  Shell remains the default engine and automatic fallback.
 
-## 验证
+## Intentional behavior retained
 
-- 新增 `tests/early_boot_rescue_test.sh`，覆盖实机同类状态：`BOOT_START=0`、未完成启动、不同 `BOOT_TOKEN`，验证进入第 1 级并提交 `RESCUED`。
-- `tests/test_safety.sh` 已通过。
-- 新版 WebUI 协议公告 revision 为 `r4`，同版本也会重新弹出，阅读倒计时为 8 秒。
+- An actual watchdog timeout still performs only verified disable-marker rescue,
+  commits `RESCUED`, and requests one normal reboot after the durable commit.
+- RescueX never deletes package-manager restrictions and does not restore any
+  disable marker without a transaction journal that proves ownership.
+- Existing installations keep their user configuration. To adopt the safest
+  default watchdog path, set `WATCHDOG_ENGINE=shell` in WebUI if an older config
+  had explicitly selected native.
+
+## Validation
+
+- POSIX shell syntax checks pass for all module scripts.
+- JavaScript syntax checks pass for the WebUI controller.
+- Native watchdog source compiles and passes `--self-test` in the available host
+  compatibility build. The shipped arm64 Android binary remains optional and is
+  selected only after its device-side self-test succeeds.
+- Offline state-machine checks cover manager update staging, short manual reboot,
+  early RTC/token transition, normal success, explicit failure, and prolonged
+  incomplete boot.
+
+## v3.5.9-r2 delta (2026-08-13)
+
+- Fix boot statistics integrity: `compute_boot_stats` now clamps `SUCCESS` to
+  `TOTAL` when duplicated `boot_history` entries made the success rate exceed
+  100% (e.g. 7 successes over 4 recorded boots, previously shown as 175%).
+- Repackaged cleanly: the earlier r1 archive accidentally contained an extra
+  `Users/Administrator/.../handoff/common-r1.sh` path entry; it is removed.
+- Version metadata bumped to v3.5.9-r2 / 35011 so devices already on v3.5.9-r1
+  (35010) receive this update through the normal update channel.

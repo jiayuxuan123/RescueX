@@ -1,5 +1,5 @@
 /*
- * RescueX v3.5.9 optional native watchdog launcher.
+ * RescueX v3.5.9-r1 optional native watchdog launcher.
  *
  * This binary deliberately owns only elapsed-time measurement and PID lifecycle.
  * All policy, health checks, rescue decisions and Android root operations remain
@@ -17,6 +17,22 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0
+#endif
+
+#ifndef SIGHUP
+#define SIGHUP 1
+#endif
+
+#ifdef __ANDROID__
+#define rx_fsync(fd) fsync(fd)
+#define rx_fchmod(fd, mode) fchmod((fd), (mode))
+#else
+#define rx_fsync(fd) 0
+#define rx_fchmod(fd, mode) 0
+#endif
+
 static volatile sig_atomic_t g_stop = 0;
 static char g_pid_path[512];
 
@@ -31,10 +47,10 @@ static int write_pid_file(const char *path) {
     fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
     if (fd < 0) return -1;
     n = snprintf(buf, sizeof(buf), "%ld\n", (long)getpid());
-    if (n <= 0 || write(fd, buf, (size_t)n) != n || fsync(fd) != 0) {
+    if (n <= 0 || write(fd, buf, (size_t)n) != n || rx_fsync(fd) != 0) {
         close(fd); unlink(path); return -1;
     }
-    if (fchmod(fd, 0600) != 0) { close(fd); unlink(path); return -1; }
+    if (rx_fchmod(fd, 0600) != 0) { close(fd); unlink(path); return -1; }
     return close(fd);
 }
 

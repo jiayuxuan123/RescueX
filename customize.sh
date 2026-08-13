@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.4.0 - customize.sh
+# RescueX v3.5.9-r1 - customize.sh
 
 # v3.0.1 改进（专业级升级）：
 # - 三级渐进式救砖支持
@@ -7,7 +7,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.5.9"
+RX_VERSION="v3.5.9-r2"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -238,6 +238,9 @@ BOOT_TIMEOUT_SEC=90
 OTA_TIMEOUT_SEC=900
 ENABLED=true
 LOG_ENABLED=true
+# The installer status line in v3.5.9 was inconsistent with the actual default
+# above. Keep first install in rehearsal mode so no unverified rescue can mutate
+# third-party modules; users can explicitly disable DRY_RUN after validation.
 DRY_RUN=true
 PROGRESSIVE_RESCUE=true
 AUTO_REENABLE=false
@@ -411,7 +414,8 @@ ui_print "  · 补丁超时: 180 秒"
 ui_print "  · 渐进式救砖: 启用"
 ui_print "  · 启动模式感知: 启用"
   ui_print "  · 数据持久化: 启用 (v3.4.0)"
-ui_print "  · DRY_RUN: 关闭"
+# v3.5.9-r1: first install remains rehearsal-only until explicitly changed.
+ui_print "  · DRY_RUN: 开启（首次验证后可关闭）"
 ui_print ""
 ui_print "  通过 WebUI 可调整全部参数"
 ui_print "  首次使用请在 WebUI 完成引导"

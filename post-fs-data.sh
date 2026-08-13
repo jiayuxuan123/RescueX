@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.4.0 - post-fs-data.sh
+# RescueX v3.5.9-r1 - post-fs-data.sh
 # 在系统启动早期执行，负责救砖逻辑核心
 #
 # v3.0.1 改进（专业级升级）：
@@ -67,82 +67,9 @@ is_magisk_family() {
     return 1
 }
 
-handle_single_modules_update_stage() {
-    local update_dir="$1"
-    local backup_dir="$2"
-    [ -d "$update_dir" ] || return 0
-
-    log "检测到更新缓存目录: $update_dir，先转存为 $backup_dir"
-    [ -d "$backup_dir" ] && rm -rf "$backup_dir" 2>/dev/null
-    if mv -f "$update_dir" "$backup_dir" 2>/dev/null; then
-        sync
-        log "更新缓存转存完成: $backup_dir"
-        return 0
-    fi
-
-    log "警告：更新缓存转存失败: $update_dir"
-    return 1
-}
-
-handle_modules_update_stage() {
-    handle_single_modules_update_stage "/data/adb/modules_update" "/data/adb/modules_update.bak"
-    handle_single_modules_update_stage "/data/adb/modules_update_mmrl" "/data/adb/modules_update_mmrl.bak"
-    return 0
-}
-
-replay_single_modules_update_backup() {
-    local backup_dir="$1"
-    local update_base="${MODULE_BASE:-/data/adb/modules}"
-    local mod_dir mod_id moved=0 failed=0 old_dir temp_old
-
-    [ -d "$backup_dir" ] || return 0
-
-    log "检测到更新缓存备份: $backup_dir，开始回放待更新模块"
-    mkdir -p "$update_base" 2>/dev/null
-
-    for mod_dir in "$backup_dir"/*/; do
-        [ ! -d "$mod_dir" ] && continue
-        mod_id=$(basename "$mod_dir")
-        case "$mod_id" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
-        old_dir="$update_base/$mod_id"
-        temp_old="${old_dir}.rescuex-old.$$"
-        if [ -d "$old_dir" ]; then
-            mv -f "$old_dir" "$temp_old" 2>/dev/null || {
-                log "警告：无法暂存旧模块，跳过回放: $mod_id"
-                failed=$((failed + 1))
-                continue
-            }
-        fi
-        if mv -f "$mod_dir" "$update_base/" 2>/dev/null; then
-            moved=$((moved + 1))
-            rm -rf "$temp_old" 2>/dev/null
-            log "已回放更新模块: $mod_id"
-        else
-            [ -d "$temp_old" ] && mv -f "$temp_old" "$old_dir" 2>/dev/null
-            failed=$((failed + 1))
-            log "警告：回放更新模块失败: $mod_id"
-        fi
-    done
-
-    if [ "$failed" -eq 0 ]; then
-        rm -rf "$backup_dir" 2>/dev/null
-    else
-        log "警告：$backup_dir 保留以便下次重试，失败模块数=$failed"
-    fi
-    if [ "$moved" -gt 0 ] && [ "$failed" -eq 0 ]; then
-        sync
-        log "已从 $backup_dir 回放 $moved 个更新模块，立即重启进入下一轮启动验证"
-        reboot
-        exit 0
-    fi
-    return 0
-}
-
-replay_modules_update_backup() {
-    replay_single_modules_update_backup "/data/adb/modules_update.bak"
-    replay_single_modules_update_backup "/data/adb/modules_update_mmrl.bak"
-    return 0
-}
+# RescueX does not own Root manager update queues. Magisk/KernelSU/APatch
+# must atomically commit their own modules_update transaction; moving or replaying
+# those directories here races the manager and may cause an unsolicited reboot.
 
 # ============================================================
 # 主流程
@@ -179,10 +106,8 @@ restore_from_persist
 read_config
 read_previous_status   # 提前读取，供禁用分支使用
 
-if is_magisk_family; then
-    handle_modules_update_stage
-    replay_modules_update_backup
-fi
+# Root manager owns module update staging and reboot scheduling. RescueX only
+# observes the resulting module tree after the manager has committed it.
 
 # v2.7.2: 提前修正异常 LAST_RESCUE_TIME（post-fs-data 阶段时钟可能已恢复）
 # 与 service.sh 形成双保险，任一环节成功即可消除 "20261 天前" 的显示异常

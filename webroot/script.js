@@ -1,4 +1,4 @@
-/* RescueX v3.5.9 - WebUI 控制器
+/* RescueX v3.5.9-r2 - WebUI controller
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -12,11 +12,11 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.5.9';
-const APP_VERSION_CODE = 35009;
-// v3.5.9 has a material boot-rescue safety notice. Bump this revision whenever
-// acknowledgement text changes so existing installs must read it once.
-const ONBOARDING_NOTICE_REVISION = 'r4';
+const APP_VERSION = 'v3.5.9-r2';
+const APP_VERSION_CODE = 35011;
+// v3.5.9-r2: update queues are owned by the Root manager; token changes are
+// diagnostics/ownership data, not standalone automatic-rescue evidence.
+const ONBOARDING_NOTICE_REVISION = 'r5';
 const ONBOARDING_COUNTDOWN_SECONDS = 8;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
@@ -132,7 +132,7 @@ const I18N = {
         source_code: '源码',
         update_notice: '更新公告',
         update_notice_title: '强烈推荐更新：修复启动救砖底层严重漏洞',
-        update_notice_desc: 'v3.5.9 修复早期启动阶段 RTC 未同步时，连续重启可能被错误忽略、导致三级救砖不触发的底层漏洞。已测试通过，强烈建议立即更新。',
+        update_notice_desc: 'v3.5.9-r2 修复模块更新期间的错误重启与误救砖：RescueX 不再接管 Root 管理器更新队列；BOOT_TOKEN 仅用于诊断，不再单独触发自动救砖。',
         check_update: '检查更新',
         checking_update: '正在检查更新...',
         update_available: '发现新版本',
@@ -140,7 +140,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.5.9：修复早期启动 RTC 未同步时三级救砖可能不触发的底层严重漏洞。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.5.9-r2：管理器更新队列完全隔离，启动 token 仅用于诊断与事务归属。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -449,7 +449,7 @@ const I18N = {
         source_code: 'Source',
         update_notice: 'Update Notice',
         update_notice_title: 'Strongly recommended: critical boot-rescue fix',
-        update_notice_desc: 'v3.5.9 fixes a low-level bug where early boot with an unsynchronized RTC could ignore consecutive reboots and prevent three-level rescue from triggering. Immediate update is strongly recommended.',
+        update_notice_desc: 'v3.5.9-r2 fixes erroneous reboot and rescue during module updates: RescueX no longer takes over Root-manager update queues, and BOOT_TOKEN is diagnostic only rather than a standalone rescue trigger.',
         check_update: 'Check Updates',
         checking_update: 'Checking updates...',
         update_available: 'Update available',
@@ -457,7 +457,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.5.9 fixes a critical early-boot rescue trigger bug when RTC is not synchronized.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.5.9-r2 isolates manager update queues and uses boot tokens only for diagnostics and transaction ownership.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -927,7 +927,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.9' : 'Automatic Boot Rescue v3.5.9';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.9-r2' : 'Automatic Boot Rescue v3.5.9-r2';
     }
 
     openExternal(url) {
@@ -2609,7 +2609,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         logo.textContent = 'R';
         const title = document.createElement('h2');
         title.style.cssText = 'margin:0;font-size:18px;color:var(--rx-ink,#1a1a2e);';
-        title.textContent = isZh ? 'RescueX v3.5.9 更新须知' : 'RescueX v3.5.9 Update Notice';
+        title.textContent = isZh ? 'RescueX v3.5.9-r2 更新须知' : 'RescueX v3.5.9-r2 Update Notice';
         header.appendChild(logo);
         header.appendChild(title);
 
@@ -2629,8 +2629,9 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 '一次性安全模式会立即写入禁用标记，下次启动生效，请确认后再布防。',
                 '覆盖更新后如遇异常，可先卸载模块（会彻底清理状态和持久化目录）再重新安装。',
             ]},
-            { title: '✨ v3.5.9 新增与修复', items: [
-                '严重安全修复：早期启动 RTC 未同步时，连续重启不再被错误忽略；BOOT_TOKEN 变化会可靠触发三级救砖。',
+            { title: 'v3.5.9-r2 安全修复', items: [
+                '关键修复：RescueX 不再移动、回放或重启 Root 管理器的模块更新队列。',
+                '关键修复：BOOT_TOKEN 变化仅作诊断和启动事务归属，不再单独计为失败或触发救砖。',
                 '修复覆盖更新时旧自检守护未停止、运行时元数据变化导致的完整性误报。',
                 '安全修复：一次性安全模式部分恢复失败时保留 journal，不再删除恢复证据。',
                 'Bridge 协议：execStrict 保留退出码/超时/异常，写操作不再因空输出误报成功。',
@@ -2656,8 +2657,9 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 'One-shot safe mode writes disable markers immediately, effective on next boot. Confirm before arming.',
                 'If issues occur after an update, uninstall the module (which fully cleans state and persist dirs) then reinstall.',
             ]},
-            { title: '✨ v3.5.9 New & Fixed', items: [
-                'Critical fix: early boot with an unsynchronized RTC no longer ignores consecutive reboots; a changed BOOT_TOKEN reliably triggers three-level rescue.',
+            { title: 'v3.5.9-r2 Safety Fixes', items: [
+                'Critical fix: RescueX no longer moves, replays, or reboots from Root-manager module update queues.',
+                'Critical fix: BOOT_TOKEN changes are diagnostics and boot-transaction ownership only; they no longer count as a standalone rescue failure.',
                 'Fixed: Update-time integrity false positives caused by an old daemon and runtime metadata changes.',
                 'Fixed: Full rescue must verify disable markers are actually written before committing success.',
                 'Fixed: One-shot safe mode retains journal on partial restore failure.',
@@ -2772,7 +2774,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
             try { localStorage.setItem('rescuex_onboarding_notice_ack', contentHash); } catch (_) {}
             if (timer) { clearInterval(timer); timer = null; }
             overlay.remove();
-            this.toast(isZh ? '欢迎使用 RescueX v3.5.9' : 'Welcome to RescueX v3.5.9', 'success');
+            this.toast(isZh ? '欢迎使用 RescueX v3.5.9-r2' : 'Welcome to RescueX v3.5.9-r2', 'success');
         };
 
         updateButton();
