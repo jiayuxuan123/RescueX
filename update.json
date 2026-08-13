@@ -7,5 +7,5 @@
   "priority": "normal",
   "updateMessage": "v3.5.10-r2 治本修复启动统计：按 boot token 终态聚合，救砖/失败会正确反映在成功率上（不再永远100%）；最近救砖时间不再显示从未（早期RTC时间修正）；救砖次数下限补偿。versionCode=350202。",
   "releaseNotes": "postfs 救砖无 START 行也计入总启动；fix_last_rescue_time 允许 0+已救砖时修正；统计回退状态文件时间。",
-  "sha256": "0aa3d3c96b7d83ee4bd2cdfce255b00178395513099e0796056c315121d8ba63"
+  "sha256": "230956783ead7d03e567f57c00b5cec447a22575b291b3e07805873ef89ab757"
 }
