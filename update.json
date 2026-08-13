@@ -1,11 +1,11 @@
 {
-  "version": "v3.5.9-r1",
-  "versionCode": 35010,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.9-r1/RescueX-v3.5.9-r1.zip",
+  "version": "v3.5.9-r2",
+  "versionCode": 35011,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.9-r2/RescueX-v3.5.9-r2.zip",
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md",
   "recommended": true,
   "priority": "normal",
-  "updateMessage": "修复模块更新队列劫持导致的误重启问题；移除 /data/adb/modules_update 劫持逻辑；BOOT_TOKEN 仅用于诊断；DRY_RUN 默认开启；修复启动统计成功率超过100%的bug。",
-  "releaseNotes": "归档修复版：修复更新队列劫持导致的误重启和误救砖问题；service.sh 保护 RESCUED 状态不被覆盖；启动统计增加数据完整性验证。",
-  "sha256": "f54d0719cd8fe38b44aacc3f75de5afbf80f6e9170897f17fc0a9e2f0792f6fd"
+  "updateMessage": "v3.5.9-r2 修复启动统计异常（成功率超过100%）并干净重打包；保留 r1 全部修复：不接管 Root 管理器更新队列、BOOT_TOKEN 仅诊断、DRY_RUN 默认开启。",
+  "releaseNotes": "修复 boot_history 重复导致的统计错误；移除 r1 包中误带的 handoff 路径条目；versionCode 递增到 35011，r1 用户可正常收到更新。",
+  "sha256": "1d371eba9b40545f4362fbc7c9c427061402e9981a2620e9d917aed4232bcfdc"
 }
