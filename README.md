@@ -1,14 +1,8 @@
 # RescueX - 自动救砖守护
 
-> **📦 项目当前处于休眠状态**（2026-08-07）
->
-> RescueX 已迭代至 v3.5.9，功能完整、测试覆盖充分，核心救砖逻辑经过大量实机验证。
-> 当前不再活跃更新，最新稳定版本为 **v3.5.9**。
->
-> - 代码仍保持开源，MIT 许可证下可自由使用
-> - 后续如有新的想法或需求，可能会重启项目开发
-> - GitHub Release 保留供下载与备份
-> - Issue 可能不会及时回复；如需继续探索，建议 fork 自行维护
+> **维护状态：活跃**。当前版本 **v3.5.10**（versionCode 35020）。
+> 安装时可选择是否安装 WebUI；原版 Magisk 可配合 KsuWebUIStandalone 查看 WebUI。
+> 代码开源（MIT），欢迎 fork、Issue 与 PR。
 
 Android 自动救砖模块，兼容 Magisk / KernelSU / APatch。
 
@@ -28,11 +22,25 @@ Android 自动救砖模块，兼容 Magisk / KernelSU / APatch。
 - **轻量完整性自检**：启动成功后建立 RescueX 核心文件 SHA-256 基线，独立守护进程检查
 - **一次性安全模式**：预禁用非白名单模块，下次启动进入安全模式，成功后按事务清单精确恢复
 - **诊断包导出**：一键生成脱敏诊断包（zip/tar.gz/txt 自动适配），可选打开 GitHub Issue 草稿
+- **安装交互选择 WebUI**：安装/更新时按音量键选择是否安装 WebUI（60 秒无操作自动安装）；原版 Magisk 会提示配合 [KsuWebUIStandalone](https://github.com/5ec1cff/KsuWebUIStandalone) 使用
+- **无 WebUI 模式**：选择后自动移除 WebUI 页面（保留配置与原生看门狗），所有参数可直接修改 `/data/adb/rescuex_data/config.conf` 后重启生效
 - **可选原生看门狗**：arm64 设备可启用 C 编写的单调时钟看门狗，Shell 回退始终可用
 
 ## 安装
 
-在 Magisk / KernelSU / APatch 管理器中刷入 [Releases](https://github.com/jiayuxuan123/RescueX/releases) 页面下载的 zip 包并重启即可。
+在 Magisk / KernelSU / APatch 管理器中刷入 [Releases](https://github.com/jiayuxuan123/RescueX/releases) 页面下载的 zip 包。
+
+安装过程中会显示 **WebUI 安装选择**：
+
+- `[音量+]` 安装 WebUI（推荐）
+- `[音量-]` 不安装（无 WebUI 模式，可手动修改 `/data/adb/rescuex_data/config.conf`）
+- **60 秒无操作自动安装 WebUI**
+
+> **原版 Magisk 用户**：官方 Magisk 不支持模块 WebUI。如需使用 WebUI，
+> 请安装开源应用 [KsuWebUIStandalone](https://github.com/5ec1cff/KsuWebUIStandalone)
+> （下载地址见其 Releases 页面），安装后即可在应用内查看本模块 WebUI。
+
+安装完成后重启设备生效。
 
 ## 开源仓库
 

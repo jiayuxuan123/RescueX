@@ -7,7 +7,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.5.9-r2"
+RX_VERSION="v3.5.10"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -79,6 +79,69 @@ elif [ -d "/data/adb/magisk" ]; then
     MANAGER="magisk"
 fi
 ui_print "- 管理器: $MANAGER"
+
+# === WebUI 安装选择 (v3.5.10) ===
+# 音量键选择是否安装 WebUI；60 秒无操作自动安装 WebUI。
+# 原版 Magisk 不支持 WebUI，提示可配合 KsuWebUIStandalone 使用：
+#   https://github.com/5ec1cff/KsuWebUIStandalone
+KSU_WEBUI_URL="https://github.com/5ec1cff/KsuWebUIStandalone"
+
+webui_supported_manager() {
+    case "$MANAGER" in
+        kernelsu|sukisuultra|apatch) return 0 ;;
+        magisk)
+            # MMRL 等支持 WebUI 的第三方 Magisk 管理器视为支持
+            pm list packages 2>/dev/null | grep -qi "dergoogler.mmrl" && return 0
+            return 1
+            ;;
+        *) return 0 ;;
+    esac
+}
+
+prompt_webui_choice() {
+    ui_print ""
+    ui_print "============================================"
+    ui_print "  WebUI 安装选择"
+    ui_print "============================================"
+    if webui_supported_manager; then
+        ui_print "  当前管理器支持 WebUI：$MANAGER"
+    else
+        ui_print "  ! 原版 Magisk 不支持 WebUI"
+        ui_print "  ! 如需使用 WebUI，请安装 KsuWebUIStandalone："
+        ui_print "  $KSU_WEBUI_URL"
+    fi
+    ui_print ""
+    ui_print "  [音量+] 安装 WebUI（推荐）"
+    ui_print "  [音量-] 不安装（无 WebUI 模式，可手动改配置）"
+    ui_print "  60 秒内无操作将自动安装 WebUI"
+    ui_print "============================================"
+}
+
+wait_webui_volkey() {
+    # 无按键检测环境时直接返回默认（安装 WebUI）
+    command -v getevent >/dev/null 2>&1 || return 0
+    local i=0 ev
+    while [ "$i" -lt 60 ]; do
+        ev=$(timeout 1 getevent -lc 1 2>/dev/null)
+        case "$ev" in
+            *VOLUMEUP*) return 0 ;;
+            *VOLUMEDOWN*) return 1 ;;
+        esac
+        i=$((i + 1))
+    done
+    return 0
+}
+
+INSTALL_WEBUI=true
+prompt_webui_choice
+if wait_webui_volkey; then
+    ui_print "- 已选择：安装 WebUI"
+    INSTALL_WEBUI=true
+else
+    ui_print "- 已选择：无 WebUI 模式（移除 WebUI 页面，配置可手动修改）"
+    INSTALL_WEBUI=false
+fi
+
 
 # === 创建状态目录 ===
 STATE_DIR="$MODPATH/webroot/state"
@@ -369,6 +432,14 @@ if [ -d "$SNAPSHOT_DIR" ]; then
 fi
 chmod 0700 "$PERSIST_DIR" 2>/dev/null
 
+# v3.5.10: 无 WebUI 模式移除页面文件
+# 保留 webroot/state（配置/状态）与 webroot/arm64-v8a（原生看门狗二进制）。
+if [ "$INSTALL_WEBUI" != "true" ]; then
+    ui_print "- 无 WebUI 模式：移除 WebUI 页面文件"
+    rm -f "$MODPATH/webroot/index.html" "$MODPATH/webroot/script.js" "$MODPATH/webroot/style.css" "$MODPATH/webroot/workspace-v2.css" 2>/dev/null
+    rm -rf "$MODPATH/webroot/assets" 2>/dev/null
+fi
+
 # === 权限设置 ===
 set_perm "$MODPATH" 0 0 0755
 set_perm "$MODPATH/common.sh"        0 0 0700
@@ -417,7 +488,12 @@ ui_print "  · 启动模式感知: 启用"
 # v3.5.9-r1: first install remains rehearsal-only until explicitly changed.
 ui_print "  · DRY_RUN: 开启（首次验证后可关闭）"
 ui_print ""
+if [ "$INSTALL_WEBUI" = "true" ]; then
 ui_print "  通过 WebUI 可调整全部参数"
 ui_print "  首次使用请在 WebUI 完成引导"
+else
+ui_print "  无 WebUI 模式：请手动修改配置文件"
+ui_print "  配置路径: /data/adb/rescuex_data/config.conf"
+fi
 ui_print "  重启设备以生效"
 ui_print "============================================"

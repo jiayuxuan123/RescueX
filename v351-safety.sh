@@ -282,7 +282,13 @@ _three_level_rescue_unlocked() {
 # not anti-root attestation; release signatures are handled outside the module.
 # module.prop is excluded because service.sh intentionally refreshes its description.
 integrity_target_files() {
-    printf '%s\n' common.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh webroot/index.html webroot/script.js webroot/style.css webroot/workspace-v2.css
+    local f
+    printf '%s\n' common.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh
+    # WebUI 页面文件仅在存在时纳入完整性基线；
+    # 无 WebUI 模式（安装时选择移除页面）不会把缺失文件误报为被篡改。
+    for f in webroot/index.html webroot/script.js webroot/style.css webroot/workspace-v2.css; do
+        [ -f "$MODDIR/$f" ] && printf '%s\n' "$f"
+    done
 }
 
 # A boot is healthy only after a committed SUCCESS state, never merely because
