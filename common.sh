@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.10-r1"
-RX_VERSION_CODE=350201
+RX_VERSION="v3.5.10-r2"
+RX_VERSION_CODE=350202
 
 # ============================================================
 # 路径初始化
@@ -1624,7 +1624,7 @@ read_status() {
 # 在 post-fs-data 和 service.sh 中均会调用（双保险）
 # 仅当时钟已恢复正常时才执行修正，确保不引入错误值
 fix_last_rescue_time() {
-    local now lrt
+    local now lrt rc
     now=$(date +%s 2>/dev/null)
     case "$now" in ''|*[!0-9]*) return ;; esac
     [ "$now" -le 1577836800 ] && return
@@ -1632,8 +1632,18 @@ fix_last_rescue_time() {
     if [ ! -f "$STATUS_FILE" ]; then return; fi
     lrt=$(grep "^LAST_RESCUE_TIME=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
     case "$lrt" in ''|*[!0-9]*) return ;; esac
-    [ "$lrt" -eq 0 ] && return
-    [ "$lrt" -ge 1577836800 ] && return
+
+    # v3.5.10-r2: 早期 RTC 未同步时 commit_verified_rescue 写入 0。
+    # 若确实发生过救砖（RESCUE_COUNT>0），0 表示"时间未知"而非"从未"，
+    # 此时修正为当前时间（近似），避免 WebUI 显示"从未救砖"。
+    if [ "$lrt" -eq 0 ]; then
+        rc=$(grep "^RESCUE_COUNT=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
+        case "$rc" in ''|*[!0-9]*) rc=0 ;; esac
+        [ "$rc" -gt 0 ] || return
+        log "已修正 LAST_RESCUE_TIME: 0（已救砖 $rc 次，早期时钟未同步）→ $now"
+    elif [ "$lrt" -ge 1577836800 ]; then
+        return
+    fi
 
     local tmp="${STATUS_TMP}.$$"
     while IFS='=' read -r k v; do
@@ -1643,7 +1653,7 @@ fix_last_rescue_time() {
     sync "$tmp" 2>/dev/null
     mv "$tmp" "$STATUS_FILE"
     chmod 0600 "$STATUS_FILE" 2>/dev/null
-    log "已修正 LAST_RESCUE_TIME: $lrt → $now"
+    log "已修正 LAST_RESCUE_TIME: ${lrt:-0} → $now"
 }
 
 # ============================================================
@@ -1863,6 +1873,13 @@ commit_verified_rescue() {
     case "$requested_count" in ''|*[!0-9]*) rescue_count=$((rescue_count + 1)) ;; *) rescue_count="$requested_count" ;; esac
     [ -n "$token" ] || token=$(get_boot_token)
     now=$(get_valid_epoch)
+    # v3.5.10-r2: 早期 RTC 未同步时 get_valid_epoch 返回 0。
+    # 保留旧 LAST_RESCUE_TIME，避免用 0 覆盖有效值；fix_last_rescue_time
+    # 会在时钟恢复后把 0 修正为近似时间。
+    if [ "$now" -le 0 ]; then
+        now=$(grep "^LAST_RESCUE_TIME=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
+        case "$now" in ''|*[!0-9]*) now=0 ;; esac
+    fi
 
     tmp="${STATUS_TMP}.rescue.$$"
     cat > "$tmp" << STAT
@@ -2418,13 +2435,11 @@ detect_lsposed_state() {
 # 输出格式：KEY=VALUE 多行
 # ============================================================
 compute_boot_stats() {
-    local total=0 success=0 rescued=0 failed=0
-    local total_duration=0 duration_count=0
+    local total=0 success=0 rescued=0 failed=0 pending=0
+    local sum_duration=0 duration_count=0
     local last_rescue_time=0 last_success_time=0
-    local history_last_rescue_time=0 status_last_rescue_time=0 status_rescued=0
-    # v2.6.0: 移除未使用的 first_boot_time 变量
-    # 累计启动耗时（来自 SERVICE 行）
-    local sum_duration=0
+    local status_last_rescue_time=0 status_rescued=0
+    local status_boot_end=0
 
     [ ! -f "$HISTORY_FILE" ] && {
         echo "TOTAL=0"
@@ -2438,146 +2453,105 @@ compute_boot_stats() {
         return
     }
 
-    # boot_history 包含两种行格式：
-    #   [time] START | fail=N | ota=bool | result=BOOTING  ← 每次开机记录
-    #   [time] SERVICE | duration=Ns | result=SUCCESS      ← 启动成功记录
-    #   [time] RESCUE | ...                                ← 救砖记录（watchdog_trigger）
-    # 统计：TOTAL=START 行数，SUCCESS=SERVICE 行数，RESCUED=状态文件救砖计数，
-    # FAILED=TOTAL-SUCCESS-非正常关机数（粗略估算）
-    #
-    # v2.6.0 F-BUG-1 加固说明：
-    #   原审计报告指出某历史版本曾用 `sed -n 's/.*duration=\([0-9]*\)s\?.*/\1/p'`
-    #   提取耗时，其中 `\?` 是 GNU sed 专有扩展，toybox/busybox sed 不兼容，
-    #   导致 AVG_DURATION 永远为 0。当前实现已改用 POSIX shell 参数展开：
-    #       dur_val=${line#*duration=}      # 去掉前缀到 duration=
-    #       dur_val=${dur_val%%[!0-9]*}     # 去掉第一个非数字字符之后的所有内容
-    #   现追加 awk 兜底：若参数展开后 dur_val 仍为空但行中确实含 duration=，
-    #   说明参数展开在该 toybox 版本上未按预期工作，此时用 awk 重新提取，
-    #   保证任何环境下平均耗时统计都不会静默失效。
-    local line result dur_val hist_ts rescue_from_history=0
-    # v3.5.10-r1: 配对计数。success 只统计“其 boot token 在 START 行中存在”
-    # 且未重复计数的 SERVICE 行；孤儿 SERVICE 行（历史脏数据，无对应 START）
-    # 不再虚高成功率，救砖/失败启动也会正确反映在成功率上。
-    local start_tokens="" srv_tokens="" tok=""
+    # v3.5.10-r2: 按 boot token 终态聚合（awk）。
+    #  - START/RESCUE/FAILURE 行创建/记录 boot token（启动证据）
+    #  - SERVICE 行仅将已存在 token 升级为 SUCCESS（孤儿 SERVICE 不计入）
+    #  - 终态优先级：RESCUE(4) > FAILURE(3) > SUCCESS(2) > PENDING(1)
+    #  - postfs 救砖只有 RESCUE 行无 START 行，仍计为一次启动（失败终态），
+    #    因此救砖/失败会正确反映在成功率上，不再永远 100%。
+    local out line k v
+    out=$(awk '
+{
+    lines[NR]=$0
+}
+END {
+    for (i=1;i<=NR;i++) {
+        line=lines[i]
+        type=""
+        if (line ~ / START /) type="START"
+        else if (line ~ / SERVICE /) type="SERVICE"
+        else if (line ~ / RESCUE /) type="RESCUE"
+        else if (line ~ / FAILURE /) type="FAILURE"
+        else if (line ~ / STATE /) type="STATE"
+        if (type=="") continue
+        tok=""
+        if (match(line, /boot=[A-Za-z0-9._-]+/)) tok=substr(line, RSTART+5, RLENGTH-5)
+        if (tok=="") continue
+        ts=0
+        if (line ~ /^\[[0-9]+\]/) { ts=line; sub(/^\[/,"",ts); sub(/\].*/,"",ts); ts+=0 }
+        dur=0
+        if (type=="SERVICE" && match(line, /duration=[0-9]+/)) { dur=substr(line, RSTART+9, RLENGTH-9)+0 }
+        if (type=="START") {
+            if (st[tok]<1) st[tok]=1
+        } else if (type=="RESCUE") {
+            st[tok]=4
+            if (ts>0 && ts>rtime[tok]) rtime[tok]=ts
+        } else if (type=="FAILURE") {
+            if (!(tok in st) || st[tok]<3) st[tok]=3
+        } else if (type=="SERVICE") {
+            if ((tok in st) && st[tok]<2) {
+                st[tok]=2
+                if (ts>0) stime[tok]=ts
+                if (dur>0 && dur<3600) sdurac[tok]=dur
+            }
+        }
+    }
+    for (t in st) {
+        total++
+        if (st[t]==2) success++
+        else if (st[t]==3) failcnt++
+        else if (st[t]==4) rescuecnt++
+        else pending++
+        if (st[t]==2 && stime[t]>last_success) last_success=stime[t]
+        if (st[t]==4 && rtime[t]>last_rescue) last_rescue=rtime[t]
+        if (st[t]==2 && sdurac[t]>0) { dsum+=sdurac[t]; dcount++ }
+    }
+    printf "TOTAL=%d\nSUCCESS=%d\nRESCUED=%d\nFAILED=%d\nPENDING=%d\nDSUM=%d\nDCOUNT=%d\nLAST_SUCCESS=%d\nLAST_RESCUE=%d\n", total, success, rescuecnt, failcnt, pending, dsum, dcount, last_success, last_rescue
+}
+' "$HISTORY_FILE" 2>/dev/null)
     while IFS= read -r line || [ -n "$line" ]; do
-        [ -z "$line" ] && continue
-        # 检测行类型
         case "$line" in
-            *"SERVICE "*|*"SERVICE|"*)
-                # v3.5.10-r1: 配对计数。行顺序保证：同一次启动的 START 行
-                # 先于 SERVICE 行写入历史（post-fs-data 早于 service.sh）。
-                tok=""
-                case "$line" in
-                    *"boot="*)
-                        tok=${line#*boot=}
-                        tok=${tok%%[!A-Za-z0-9._-]*}
-                        case "$tok" in
-                            ''|*[!A-Za-z0-9._-]*)
-                                # 无有效 token（老格式行）：保持旧行为计数
-                                success=$((success + 1))
-                                ;;
-                            *)
-                                case " $start_tokens " in
-                                    *" $tok "*)
-                                        case " $srv_tokens " in
-                                            *" $tok "*) ;;  # 已计数，跳过重复行
-                                            *) srv_tokens="$srv_tokens $tok"; success=$((success + 1)) ;;
-                                        esac
-                                        ;;
-                                    *) ;;  # 孤儿 SERVICE 行：不计入成功
-                                esac
-                                ;;
-                        esac
-                        ;;
-                    *) success=$((success + 1)) ;;  # 无 boot 字段的老格式行
-                esac
-                # 提取 duration=Ns，使用 POSIX shell 参数展开兼容 toybox/busybox
-                dur_val=""
-                case "$line" in
-                    *duration=*)
-                        dur_val=${line#*duration=}
-                        dur_val=${dur_val%%[!0-9]*}
-                        # v2.6.0 F-BUG-1 awk 兜底：参数展开异常时重新提取
-                        if [ -z "$dur_val" ]; then
-                            dur_val=$(echo "$line" | awk -F'duration=' '{split($2,a,/[^0-9]/); print a[1]}' 2>/dev/null)
-                            case "$dur_val" in ''|*[!0-9]*) dur_val="" ;; esac
-                        fi
-                        ;;
-                esac
-                case "$dur_val" in
-                    ''|*[!0-9]*) ;;
-                    *)
-                        if [ "$dur_val" -gt 0 ] && [ "$dur_val" -lt 3600 ]; then
-                            sum_duration=$((sum_duration + dur_val))
-                            duration_count=$((duration_count + 1))
-                        fi
-                        ;;
-                esac
-                ;;
-            *"START "*|*"START|"*)
-                total=$((total + 1))
-                # v3.5.10-r1: 收集 START 行的 boot token（去重），供配对计数
-                case "$line" in
-                    *"boot="*)
-                        tok=${line#*boot=}
-                        tok=${tok%%[!A-Za-z0-9._-]*}
-                        case "$tok" in
-                            ''|*[!A-Za-z0-9._-]*) ;;
-                            *)
-                                case " $start_tokens " in
-                                    *" $tok "*) ;;
-                                    *) start_tokens="$start_tokens $tok" ;;
-                                esac
-                                ;;
-                        esac
-                        ;;
-                esac
-                # v2.6.0: 移除死代码 first_boot_time（计算后从未被使用）
-                ;;
-            *"RESCUE "*|*"RESCUE|"*)
-                rescue_from_history=$((rescue_from_history + 1))
-                case "$line" in
-                    \[*\]*)
-                        hist_ts=${line#"["}
-                        hist_ts=${hist_ts%%"]"*}
-                        case "$hist_ts" in
-                            ''|*[!0-9]*) ;;
-                            *) history_last_rescue_time="$hist_ts" ;;
-                        esac
-                        ;;
-                esac
-                ;;
+            TOTAL=*) total=${line#TOTAL=} ;;
+            SUCCESS=*) success=${line#SUCCESS=} ;;
+            RESCUED=*) rescued=${line#RESCUED=} ;;
+            PENDING=*) pending=${line#PENDING=} ;;
+            DSUM=*) sum_duration=${line#DSUM=} ;;
+            DCOUNT=*) duration_count=${line#DCOUNT=} ;;
+            LAST_SUCCESS=*) last_success_time=${line#LAST_SUCCESS=} ;;
+            LAST_RESCUE=*) last_rescue_time=${line#LAST_RESCUE=} ;;
         esac
-    done < "$HISTORY_FILE"
+    done << EOF
+$out
+EOF
 
-    # 从状态文件读取救砖次数与时间
+    case "$total" in ''|*[!0-9]*) total=0 ;; esac
+    case "$success" in ''|*[!0-9]*) success=0 ;; esac
+    case "$rescued" in ''|*[!0-9]*) rescued=0 ;; esac
+    case "$sum_duration" in ''|*[!0-9]*) sum_duration=0 ;; esac
+    case "$duration_count" in ''|*[!0-9]*) duration_count=0 ;; esac
+    case "$last_rescue_time" in ''|*[!0-9]*) last_rescue_time=0 ;; esac
+    case "$last_success_time" in ''|*[!0-9]*) last_success_time=0 ;; esac
+
+    # 状态文件兜底/下限：历史行被截断、写入失败或早期 RTC 无有效时间时，
+    # 以 boot_status 的累计值与修正后的时间为准。
     if [ -f "$STATUS_FILE" ]; then
         status_last_rescue_time=$(grep "^LAST_RESCUE_TIME=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
         case "$status_last_rescue_time" in ''|*[!0-9]*) status_last_rescue_time=0 ;; esac
         status_rescued=$(grep "^RESCUE_COUNT=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
         case "$status_rescued" in ''|*[!0-9]*) status_rescued=0 ;; esac
-        # BOOT_END 作为最近成功时间
-        last_success_time=$(grep "^BOOT_END=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
-        case "$last_success_time" in ''|*[!0-9]*) last_success_time=0 ;; esac
+        status_boot_end=$(grep "^BOOT_END=" "$STATUS_FILE" 2>/dev/null | cut -d= -f2)
+        case "$status_boot_end" in ''|*[!0-9]*) status_boot_end=0 ;; esac
+
+        # 救砖次数取下限补偿（历史可能被截断）
+        [ "$status_rescued" -gt "$rescued" ] && rescued=$status_rescued
+        # 最近救砖时间：历史无有效时间时用状态值
+        [ "$last_rescue_time" -le 0 ] && last_rescue_time=$status_last_rescue_time
+        # 最近成功时间：历史无有效时间时用 BOOT_END
+        [ "$last_success_time" -le 0 ] && last_success_time=$status_boot_end
     fi
 
-    # v3.2.0: 统计口径统一为 boot_history 优先，状态文件仅作历史缺失时兜底。
-    # 这样旧版本遗留的 RESCUE_COUNT 脏数据不会继续污染 WebUI 统计。
-    if [ "$rescue_from_history" -gt 0 ]; then
-        rescued=$rescue_from_history
-        last_rescue_time=$history_last_rescue_time
-    else
-        rescued=$status_rescued
-        last_rescue_time=$status_last_rescue_time
-    fi
-
-    # v3.5.9-r1: 数据完整性验证 - 防止 boot_history 重复导致 SUCCESS > TOTAL
-    if [ "$success" -gt "$total" ]; then
-        log "[STATS] 检测到异常数据: SUCCESS=$success > TOTAL=$total，重置 SUCCESS=$total"
-        success=$total
-    fi
-
-    # 启动失败次数按实际启动次数估算：总启动 - 成功启动
+    # 失败次数按实际启动次数估算：总启动 - 成功启动
+    # total 包含成功/失败/救砖/未完成 token，数学上恒 >= success
     failed=$((total - success))
     [ "$failed" -lt 0 ] && failed=0
 
