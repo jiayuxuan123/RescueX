@@ -1,11 +1,11 @@
 {
-  "version": "v3.5.9-r2",
-  "versionCode": 35011,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.9-r2/RescueX-v3.5.9-r2.zip",
+  "version": "v3.5.10",
+  "versionCode": 35020,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.10/RescueX-v3.5.10.zip",
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md",
   "recommended": true,
   "priority": "normal",
-  "updateMessage": "v3.5.9-r2 修复启动统计异常（成功率超过100%）并干净重打包；保留 r1 全部修复：不接管 Root 管理器更新队列、BOOT_TOKEN 仅诊断、DRY_RUN 默认开启。",
-  "releaseNotes": "修复 boot_history 重复导致的统计错误；移除 r1 包中误带的 handoff 路径条目；versionCode 递增到 35011，r1 用户可正常收到更新。",
-  "sha256": "1d371eba9b40545f4362fbc7c9c427061402e9981a2620e9d917aed4232bcfdc"
+  "updateMessage": "v3.5.10 新增安装时音量键选择 WebUI（60秒无操作自动安装）；原版 Magisk 可配合 KsuWebUIStandalone 使用 WebUI；新增无 WebUI 模式（直接修改 /data/adb/rescuex_data/config.conf）；完整性检查适配无 WebUI 模式。继承 v3.5.9-r1/r2 全部修复。",
+  "releaseNotes": "安装交互：音量+装 WebUI / 音量-不装，60秒超时默认安装。无 WebUI 模式自动移除页面文件并保留配置。版本 versionCode=35020。",
+  "sha256": "316919fb1e13ffd13b48423a7a71c8a5cd8fc20be1cb7dc5a2e290325bc36c0e"
 }
