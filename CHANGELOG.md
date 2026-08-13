@@ -1,3 +1,15 @@
+# v3.5.10（安装交互：音量键选择 WebUI / 无 WebUI 模式）
+
+> **推荐所有 RescueX 用户更新。** 新增安装时音量键选择是否安装 WebUI；60 秒无操作自动安装 WebUI；原版 Magisk 提示可配合 KsuWebUIStandalone 使用；支持无 WebUI 模式（直接修改配置文件）。
+
+- 安装时按 **音量+** 安装 WebUI，**音量-** 不安装；60 秒无操作自动安装 WebUI。
+- 原版 Magisk 不支持 WebUI，安装界面提示可配合开源应用 [KsuWebUIStandalone](https://github.com/5ec1cff/KsuWebUIStandalone) 使用。
+- 无 WebUI 模式自动移除 WebUI 页面文件（保留 `webroot/state` 配置与 `webroot/arm64-v8a` 原生看门狗），所有参数可直接修改 `/data/adb/rescuex_data/config.conf` 后重启生效。
+- 完整性检查适配：无 WebUI 模式下移除的页面文件不再纳入完整性基线，不会误报 COMPROMISED。
+- 继承 v3.5.9-r1/r2 全部修复：更新队列隔离、BOOT_TOKEN 仅诊断、DRY_RUN 默认开启、启动统计完整性校验。
+- 版本元数据：v3.5.10 / versionCode 35020。
+
+# v3.5.9-r2（启动统计完整性修复）
 # v3.5.9-r2（启动统计完整性修复）
 
 > **推荐所有 RescueX 用户更新。** 修复 WebUI 启动统计异常（成功率超过 100%），并干净重打包。已安装 v3.5.9-r1（versionCode 35010）的设备可通过正常更新通道收到此版本。
