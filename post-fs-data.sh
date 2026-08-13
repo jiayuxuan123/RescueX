@@ -104,14 +104,16 @@ fi
 restore_from_persist
 
 read_config
+
+# v3.5.10-r2: 修正 LAST_RESCUE_TIME 必须在 read_previous_status 之前执行。
+# 旧顺序在读取后修正，随后 write_status 又用旧的 PREV_LAST_RESCUE_TIME
+# 覆盖修正结果，导致"从未救砖"长期显示。
+# 与 service.sh 形成双保险，任一环节成功即可消除显示异常。
+fix_last_rescue_time
 read_previous_status   # 提前读取，供禁用分支使用
 
 # Root manager owns module update staging and reboot scheduling. RescueX only
 # observes the resulting module tree after the manager has committed it.
-
-# v2.7.2: 提前修正异常 LAST_RESCUE_TIME（post-fs-data 阶段时钟可能已恢复）
-# 与 service.sh 形成双保险，任一环节成功即可消除 "20261 天前" 的显示异常
-fix_last_rescue_time
 
 # 如果模块被禁用，跳过所有逻辑
 if [ "$ENABLED" != "true" ]; then
