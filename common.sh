@@ -2487,7 +2487,12 @@ END {
             st[tok]=4
             if (ts>0 && ts>rtime[tok]) rtime[tok]=ts
         } else if (type=="FAILURE") {
-            if (!(tok in st) || st[tok]<3) st[tok]=3
+            # 仅显式失败（FAILURE/TEST_FAILURE）计入失败终态；
+            # STATUS_COMMIT_REJECTED/OWNERSHIP_LOST 是 service 与救砖竞争的
+            # 结果，不代表真实失败，忽略。
+            if (line ~ /result=(FAILURE|TEST_FAILURE)/) {
+                if (!(tok in st) || st[tok]<3) st[tok]=3
+            }
         } else if (type=="SERVICE") {
             if ((tok in st) && st[tok]<2) {
                 st[tok]=2
@@ -2555,9 +2560,12 @@ EOF
     failed=$((total - success))
     [ "$failed" -lt 0 ] && failed=0
 
-    local success_rate=0 avg_duration=0
-    if [ "$total" -gt 0 ]; then
-        success_rate=$((success * 100 / total))
+    # v3.5.10-r2: 成功率分母排除 PENDING（进行中的启动不是失败）。
+    # 救砖/失败终态仍计入分母，正确拉低成功率。
+    local success_rate=0 avg_duration=0 rate_denom=0
+    rate_denom=$((total - pending))
+    if [ "$rate_denom" -gt 0 ]; then
+        success_rate=$((success * 100 / rate_denom))
     fi
     if [ "$duration_count" -gt 0 ]; then
         avg_duration=$((sum_duration / duration_count))
