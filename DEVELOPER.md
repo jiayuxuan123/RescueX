@@ -10,7 +10,7 @@ RescueX 是一个 Magisk / KernelSU / APatch 模块，用于**自动救砖**：
 （嫌疑模块禁用 → 验证式全量禁用 → 日志审计）恢复设备。
 
 - 仓库：`jiayuxuan123/RescueX`（GitHub）
-- 当前版本：v3.5.10-r1（versionCode 350201）
+- 当前版本：v3.5.10-r2（versionCode 350201）
 - 兼容：Android 9+ (API 28+)，Magisk 20.4+ / KernelSU / APatch / SukiSU / MMRL
 
 ## 2. 目录结构与职责
