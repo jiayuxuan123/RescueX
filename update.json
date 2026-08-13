@@ -1,11 +1,11 @@
 {
-  "version": "v3.5.10",
-  "versionCode": 35020,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.10/RescueX-v3.5.10.zip",
+  "version": "v3.5.10-r1",
+  "versionCode": 350201,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.10-r1/RescueX-v3.5.10-r1.zip",
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md",
   "recommended": true,
   "priority": "normal",
-  "updateMessage": "v3.5.10 新增安装时音量键选择 WebUI（60秒无操作自动安装）；原版 Magisk 可配合 KsuWebUIStandalone 使用 WebUI；新增无 WebUI 模式（直接修改 /data/adb/rescuex_data/config.conf）；完整性检查适配无 WebUI 模式。继承 v3.5.9-r1/r2 全部修复。",
-  "releaseNotes": "安装交互：音量+装 WebUI / 音量-不装，60秒超时默认安装。无 WebUI 模式自动移除页面文件并保留配置。版本 versionCode=35020。",
-  "sha256": "316919fb1e13ffd13b48423a7a71c8a5cd8fc20be1cb7dc5a2e290325bc36c0e"
+  "updateMessage": "v3.5.10-r1 治本修复启动统计：成功次数改为配对计数（只统计能配对到 START 的 SERVICE 行），救砖/失败会正确反映在成功率上，不再虚高 100%。版本号规则：同级修复用 -rN 后缀（350201）。",
+  "releaseNotes": "配对计数修复统计虚高；孤儿 SERVICE 行不再计入成功；重复行只计一次。versionCode=350201。",
+  "sha256": "c78634937971d3061f00087363dd7dabbeb29bd914dcdd9e650ee252682e48bf"
 }

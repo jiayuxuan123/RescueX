@@ -10,7 +10,7 @@ RescueX 是一个 Magisk / KernelSU / APatch 模块，用于**自动救砖**：
 （嫌疑模块禁用 → 验证式全量禁用 → 日志审计）恢复设备。
 
 - 仓库：`jiayuxuan123/RescueX`（GitHub）
-- 当前版本：v3.5.10（versionCode 35020）
+- 当前版本：v3.5.10-r1（versionCode 350201）
 - 兼容：Android 9+ (API 28+)，Magisk 20.4+ / KernelSU / APatch / SukiSU / MMRL
 
 ## 2. 目录结构与职责
@@ -71,6 +71,10 @@ INTEGRITY_CHECK_ENABLED=true
 6. **service 终态保护**：`RESCUED`/`FAILURE` 终态不会被迟到的 service 覆盖。
 7. **状态目录在 webroot/state**：无 WebUI 模式**必须保留** `webroot/state` 与
    `webroot/arm64-v8a`，只删除页面文件与 assets。
+8. **启动统计配对计数**（v3.5.10-r1）：`compute_boot_stats` 的 SUCCESS
+   只统计「boot token 能配对到 START 行」的 SERVICE 行，孤儿行不计、
+   重复行只计一次；救砖/失败会正确反映在成功率上。禁止回退为
+   "数所有 SERVICE 行" 的口径（会导致成功率虚高/永远 100%）。
 
 ## 5. 安装交互（v3.5.10）
 
@@ -92,6 +96,10 @@ INTEGRITY_CHECK_ENABLED=true
 2. 版本统一 bump：`module.prop`、`common.sh`（RX_VERSION/RX_VERSION_CODE）、
    `customize.sh`（RX_VERSION）、`webroot/script.js`（APP_VERSION/APP_VERSION_CODE）、
    `webroot/index.html`、RELEASE-NOTES、CHANGELOG。
+   **版本号规则**（v3.5.10-r1 起）：主版本 `v3.5.10` = `35020`；
+   同级修复用 `-rN` 后缀，versionCode 在 `35020` 后追加两位递增
+   （`350201`、`350202`…）。**不要**为小修复跳主版本号
+   （否则 versionCode 会快速涨级，也容易撞号）。
 3. 校验：`sh -n` 全部脚本 + `node --check webroot/script.js`。
 4. 打包：`zip -r -X RescueX-vX.zip . -x "*.zip"`（确认无 `.git`/临时文件混入）。
 5. 发布 GitHub Release（tag 与 zipUrl 一致），**versionCode 必须递增**

@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.10"
-RX_VERSION_CODE=35020
+RX_VERSION="v3.5.10-r1"
+RX_VERSION_CODE=350201
 
 # ============================================================
 # 路径初始化
@@ -2455,12 +2455,42 @@ compute_boot_stats() {
     #   说明参数展开在该 toybox 版本上未按预期工作，此时用 awk 重新提取，
     #   保证任何环境下平均耗时统计都不会静默失效。
     local line result dur_val hist_ts rescue_from_history=0
+    # v3.5.10-r1: 配对计数。success 只统计“其 boot token 在 START 行中存在”
+    # 且未重复计数的 SERVICE 行；孤儿 SERVICE 行（历史脏数据，无对应 START）
+    # 不再虚高成功率，救砖/失败启动也会正确反映在成功率上。
+    local start_tokens="" srv_tokens="" tok=""
     while IFS= read -r line || [ -n "$line" ]; do
         [ -z "$line" ] && continue
         # 检测行类型
         case "$line" in
             *"SERVICE "*|*"SERVICE|"*)
-                success=$((success + 1))
+                # v3.5.10-r1: 配对计数。行顺序保证：同一次启动的 START 行
+                # 先于 SERVICE 行写入历史（post-fs-data 早于 service.sh）。
+                tok=""
+                case "$line" in
+                    *"boot="*)
+                        tok=${line#*boot=}
+                        tok=${tok%%[!A-Za-z0-9._-]*}
+                        case "$tok" in
+                            ''|*[!A-Za-z0-9._-]*)
+                                # 无有效 token（老格式行）：保持旧行为计数
+                                success=$((success + 1))
+                                ;;
+                            *)
+                                case " $start_tokens " in
+                                    *" $tok "*)
+                                        case " $srv_tokens " in
+                                            *" $tok "*) ;;  # 已计数，跳过重复行
+                                            *) srv_tokens="$srv_tokens $tok"; success=$((success + 1)) ;;
+                                        esac
+                                        ;;
+                                    *) ;;  # 孤儿 SERVICE 行：不计入成功
+                                esac
+                                ;;
+                        esac
+                        ;;
+                    *) success=$((success + 1)) ;;  # 无 boot 字段的老格式行
+                esac
                 # 提取 duration=Ns，使用 POSIX shell 参数展开兼容 toybox/busybox
                 dur_val=""
                 case "$line" in
@@ -2486,6 +2516,22 @@ compute_boot_stats() {
                 ;;
             *"START "*|*"START|"*)
                 total=$((total + 1))
+                # v3.5.10-r1: 收集 START 行的 boot token（去重），供配对计数
+                case "$line" in
+                    *"boot="*)
+                        tok=${line#*boot=}
+                        tok=${tok%%[!A-Za-z0-9._-]*}
+                        case "$tok" in
+                            ''|*[!A-Za-z0-9._-]*) ;;
+                            *)
+                                case " $start_tokens " in
+                                    *" $tok "*) ;;
+                                    *) start_tokens="$start_tokens $tok" ;;
+                                esac
+                                ;;
+                        esac
+                        ;;
+                esac
                 # v2.6.0: 移除死代码 first_boot_time（计算后从未被使用）
                 ;;
             *"RESCUE "*|*"RESCUE|"*)
