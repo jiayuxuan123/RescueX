@@ -46,6 +46,7 @@ Android 自动救砖模块，兼容 Magisk / KernelSU / APatch。
 
 - 仓库地址：https://github.com/jiayuxuan123/RescueX
 - 在线更新：模块已内置 `updateJson`，发布新版 Release 后可直接从管理器检查更新
+- **开发者 / 交接文档**：[DEVELOPER.md](DEVELOPER.md)——项目架构、关键设计决策（含历史修复教训）、版本号规则、发布流程、测试方法与已知边界；后续维护者与 AI Agent 请先阅读此文档
 
 ### CLI（Magisk 与自动化诊断）
 
