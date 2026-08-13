@@ -103,7 +103,7 @@ RescueX 的兼容适配与 WebUI 能力离不开以下开源项目，在此一�
 | [Magisk](https://github.com/topjohnwu/Magisk) | topjohnwu | 通用 Root 方案与模块框架 |
 | [KernelSU](https://github.com/tiann/KernelSU) | tiann | 内核级 Root 方案，模块 WebUI 规范 |
 | [SukiSU Ultra](https://github.com/sukisu-ultra/sukisu-ultra) | SukiSU-Ultra | 基于 KernelSU 的分支，支持 KPM |
-| [APatch](https://github.com/AndroidPatch/APatch) | AndroidPatch | 内核级 Root 方案 |
+| [APatch](https://github.com/bmax121/APatch) | bmax121 | 内核级 Root 方案（基于 KernelPatch） |
 | [MMRL](https://github.com/DerGoogler/MMRL) | DerGoogler | 支持 WebUI 的模块管理器 |
 | [FoxMagiskModuleManager (FoxMMM)](https://github.com/Fox2Code/FoxMagiskModuleManager) | Fox2Code / Androidacy | 开源 Magisk 模块管理器 |
 | [KsuWebUIStandalone](https://github.com/5ec1cff/KsuWebUIStandalone) | 5ec1cff | 让原版 Magisk 查看模块 WebUI 的独立应用 |
