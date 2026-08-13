@@ -94,6 +94,23 @@ sh /data/adb/modules/RescueX/action.sh --cli help
 - 一次性安全模式会立即写入禁用标记，下次启动生效，请确认后再布防
 - 覆盖更新后如遇异常，可先卸载模块（会彻底清理状态和持久化目录）再重新安装
 
+## 致谢 Credits
+
+RescueX 的兼容适配与 WebUI 能力离不开以下开源项目，在此一并致谢：
+
+| 项目 | 作者 / 组织 | 说明 |
+|---|---|---|
+| [Magisk](https://github.com/topjohnwu/Magisk) | topjohnwu | 通用 Root 方案与模块框架 |
+| [KernelSU](https://github.com/tiann/KernelSU) | tiann | 内核级 Root 方案，模块 WebUI 规范 |
+| [SukiSU Ultra](https://github.com/sukisu-ultra/sukisu-ultra) | SukiSU-Ultra | 基于 KernelSU 的分支，支持 KPM |
+| [APatch](https://github.com/AndroidPatch/APatch) | AndroidPatch | 内核级 Root 方案 |
+| [MMRL](https://github.com/DerGoogler/MMRL) | DerGoogler | 支持 WebUI 的模块管理器 |
+| [FoxMagiskModuleManager (FoxMMM)](https://github.com/Fox2Code/FoxMagiskModuleManager) | Fox2Code / Androidacy | 开源 Magisk 模块管理器 |
+| [KsuWebUIStandalone](https://github.com/5ec1cff/KsuWebUIStandalone) | 5ec1cff | 让原版 Magisk 查看模块 WebUI 的独立应用 |
+
+> **特别感谢 [KsuWebUIStandalone](https://github.com/5ec1cff/KsuWebUIStandalone)**：
+> 自 v3.5.10 起，安装器会在原版 Magisk 环境提示该应用，原版 Magisk 用户也能获得完整的 WebUI 体验。
+
 ## 许可证
 
 [MIT](LICENSE)
