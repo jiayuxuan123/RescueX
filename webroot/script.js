@@ -2803,7 +2803,8 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
             this.setText('#stat-success', success);
             this.setText('#stat-failed', failed);
             this.setText('#stat-last-success', lastSuccess > 0 ? this.formatTime(lastSuccess) : this.t('never'));
-            this.setText('#stat-last-rescue', lastRescue > 0 ? this.formatTime(lastRescue) : this.t('never'));
+            // v3.5.10-r2: 已发生救砖但时间未知（早期 RTC）时显示"时间未知"而非"从未"
+            this.setText('#stat-last-rescue', lastRescue > 0 ? this.formatTime(lastRescue) : (rescued > 0 ? this.t('unknown_time') : this.t('never')));
 
             // 颜色提示
             const rateEl = this.qs('#stat-success-rate');
