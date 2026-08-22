@@ -1,3 +1,14 @@
+# v3.5.10-r3（跨厂商系统 OTA 检测与升级可靠性修复）
+
+> **需要不同 ROM 社区用户参与验证。** 本版以最近一次确认成功启动的系统构建基线识别 OTA 与厂商 Android 大版本更新，并保留旧 OTA/Recovery/BCB/update_engine 信号作兼容兜底；无法自动识别时可设置一次性手动 OTA 保护。
+
+- 新增 `ota-detection.sh`：比较 build/system/vendor/product/bootimage 指纹、增量版本、安全补丁、API/Android 版本、构建 ID 和 A/B 槽位，任一可信变化均使用 OTA 长超时。
+- 基线只会在 `service.sh` 已提交 `SUCCESS` 后推进；新系统未成功启动时保留旧基线，使后续重试继续享有 OTA 长超时。
+- WebUI 和 CLI 展示检测来源；`ota arm --apply` 可为不兼容 OEM 更新客户端设置一次性保护，成功启动后自动清除。
+- 修复结构化 patch flag 在 WebUI 的读取/清除、v35 状态恢复、启动时长历史持久化、WebUI `DRY_RUN=true` 默认值和 CLI 第三参数转发。
+- 离线 OTA/持久化/元数据测试 15 项、全部 Shell 语法检查和 WebUI JS 语法检查通过；尚需 A/B、非 A/B/Recovery OTA、OEM 大版本升级和手动保护的真实设备报告。
+- 版本：v3.5.10-r3 / versionCode 350203。
+
 # v3.5.10-r2（启动统计按终态重构：救砖正确反映 + 最近救砖时间修复）
 
 > **推荐所有 RescueX 用户更新。** 治本修复两大统计问题：救砖后成功率不再永远 100%；最近救砖不再显示"从未"。

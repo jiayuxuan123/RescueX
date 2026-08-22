@@ -1,4 +1,4 @@
-/* RescueX v3.5.10-r2 - WebUI controller
+/* RescueX v3.5.10-r3 - WebUI controller
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -12,11 +12,11 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.5.10-r2';
-const APP_VERSION_CODE = 350202;
-// v3.5.10-r2: update queues are owned by the Root manager; token changes are
-// diagnostics/ownership data, not standalone automatic-rescue evidence.
-const ONBOARDING_NOTICE_REVISION = 'r5';
+const APP_VERSION = 'v3.5.10-r3';
+const APP_VERSION_CODE = 350203;
+// v3.5.10-r3: cross-OEM system OTA detection is based on the last confirmed
+// successful system-build identity; Root manager update queues stay isolated.
+const ONBOARDING_NOTICE_REVISION = 'r6';
 const ONBOARDING_COUNTDOWN_SECONDS = 8;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
@@ -81,6 +81,24 @@ const I18N = {
         timeout_hint: '超时未完成开机则判定失败',
         ota_timeout: 'OTA 升级超时',
         ota_hint: '检测到 OTA 时使用此超时',
+        ota_detection: '系统 OTA 检测',
+        ota_detection_ready: '构建基线已就绪',
+        ota_detection_missing: '等待下一次成功启动建立基线',
+        ota_detection_active: '本次已启用 OTA 长超时',
+        ota_detection_inactive: '本次未检测到 OTA',
+        ota_detection_manual_pending: '手动保护待确认',
+        ota_detection_source_manual: '手动保护',
+        ota_detection_source_build_baseline: '系统构建变化',
+        ota_detection_source_legacy: '兼容更新信号',
+        ota_detection_source_none: '未检测',
+        ota_manual_guard: '设置/清除 OTA 手动保护',
+        ota_manual_arm_title: '设置 OTA 手动保护',
+        ota_manual_arm_desc: '下次启动将使用 OTA 超时；确认启动成功后会自动清除。是否继续？',
+        ota_manual_clear_title: '清除 OTA 手动保护',
+        ota_manual_clear_desc: '将取消下次启动的 OTA 长超时保护。是否继续？',
+        ota_manual_armed: 'OTA 手动保护已设置',
+        ota_manual_cleared: 'OTA 手动保护已清除',
+        ota_manual_failed: 'OTA 手动保护操作失败',
         grace_period: '用户重启宽限期',
         grace_hint: '短时间内重启不计入失败',
         advanced: '高级选项',
@@ -131,8 +149,8 @@ const I18N = {
         manager: '管理器',
         source_code: '源码',
         update_notice: '更新公告',
-        update_notice_title: '强烈推荐更新：修复启动救砖底层严重漏洞',
-        update_notice_desc: 'v3.5.10-r2 修复模块更新期间的错误重启与误救砖：RescueX 不再接管 Root 管理器更新队列；BOOT_TOKEN 仅用于诊断，不再单独触发自动救砖。',
+        update_notice_title: '系统 OTA 检测与升级可靠性修复',
+        update_notice_desc: 'v3.5.10-r3 新增跨厂商系统 OTA 构建基线检测和一次性手动保护；更新后的首次启动自动使用更长超时，失败重试不会覆盖旧基线。',
         check_update: '检查更新',
         checking_update: '正在检查更新...',
         update_available: '发现新版本',
@@ -140,7 +158,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.5.10-r2：管理器更新队列完全隔离，启动 token 仅用于诊断与事务归属。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.5.10-r3：新增跨厂商系统 OTA 检测、一次性手动保护与升级状态持久化修复。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -398,6 +416,24 @@ const I18N = {
         timeout_hint: 'Fail if boot not completed within this time',
         ota_timeout: 'OTA Timeout',
         ota_hint: 'Used when OTA update is detected',
+        ota_detection: 'System OTA Detection',
+        ota_detection_ready: 'Build baseline ready',
+        ota_detection_missing: 'Baseline will be created after the next successful boot',
+        ota_detection_active: 'OTA timeout active for this boot',
+        ota_detection_inactive: 'No OTA detected for this boot',
+        ota_detection_manual_pending: 'Manual guard pending confirmation',
+        ota_detection_source_manual: 'Manual guard',
+        ota_detection_source_build_baseline: 'System build changed',
+        ota_detection_source_legacy: 'Compatibility signal',
+        ota_detection_source_none: 'Not detected',
+        ota_manual_guard: 'Set/Clear OTA Manual Guard',
+        ota_manual_arm_title: 'Set OTA Manual Guard',
+        ota_manual_arm_desc: 'The next boot will use the OTA timeout and the guard clears after a confirmed successful boot. Continue?',
+        ota_manual_clear_title: 'Clear OTA Manual Guard',
+        ota_manual_clear_desc: 'This cancels the OTA timeout guard for the next boot. Continue?',
+        ota_manual_armed: 'OTA manual guard set',
+        ota_manual_cleared: 'OTA manual guard cleared',
+        ota_manual_failed: 'OTA manual guard operation failed',
         grace_period: 'Reboot Grace Period',
         grace_hint: 'Short reboots not counted as failures',
         advanced: 'Advanced',
@@ -448,8 +484,8 @@ const I18N = {
         manager: 'Manager',
         source_code: 'Source',
         update_notice: 'Update Notice',
-        update_notice_title: 'Strongly recommended: critical boot-rescue fix',
-        update_notice_desc: 'v3.5.10-r2 fixes erroneous reboot and rescue during module updates: RescueX no longer takes over Root-manager update queues, and BOOT_TOKEN is diagnostic only rather than a standalone rescue trigger.',
+        update_notice_title: 'System OTA detection and upgrade reliability fixes',
+        update_notice_desc: 'v3.5.10-r3 adds a cross-OEM system-build baseline and one-shot manual guard. The first boot after an update uses the longer timeout, and failed retries retain the prior baseline.',
         check_update: 'Check Updates',
         checking_update: 'Checking updates...',
         update_available: 'Update available',
@@ -457,7 +493,7 @@ const I18N = {
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.5.10-r2 isolates manager update queues and uses boot tokens only for diagnostics and transaction ownership.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.5.10-r3 adds cross-OEM system OTA detection, a one-shot manual guard, and upgrade-state persistence fixes.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -721,7 +757,7 @@ class RescueXUI {
             'restoreSnapshot', 'runIntegrityCheck', 'saveConfig', 'saveCustomDirs', 'saveGoodModules',
             'saveWhitelist', 'selectAllModules', 'showFeatures', 'showPrivacy',
             'showUsage', 'takeSnapshot', 'testWatchdog', 'toggleEnabled',
-            'togglePatchFlag', 'unfreezeApps', 'v35RunSimulation', 'v35RefreshStatus',
+            'togglePatchFlag', 'toggleOtaManualGuard', 'unfreezeApps', 'v35RunSimulation', 'v35RefreshStatus',
             'v35ArmOneShotSafeMode', 'v35CancelOneShotSafeMode', 'v35ExportDiagnostic'
         ]);
 
@@ -927,7 +963,7 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.10-r2' : 'Automatic Boot Rescue v3.5.10-r2';
+            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.10-r3' : 'Automatic Boot Rescue v3.5.10-r3';
     }
 
     openExternal(url) {
@@ -1318,6 +1354,55 @@ done`;
         return text || '--';
     }
 
+    formatOtaSource(source) {
+        const normalized = String(source || 'none').toLowerCase();
+        const key = `ota_detection_source_${normalized}`;
+        const label = this.t(key);
+        return label === key ? this.t('ota_detection_source_none') : label;
+    }
+
+    renderOtaDetection(snapshot, detected) {
+        const stateEl = this.qs('#ota-detection-state');
+        if (!stateEl) return;
+        const baselineReady = snapshot.OTA_BASELINE_READY === 'true';
+        const manualPending = snapshot.OTA_MANUAL_PENDING === 'true';
+        const source = this.formatOtaSource(snapshot.OTA_DETECTION_SOURCE || 'none');
+        const primary = detected
+            ? `${this.t('ota_detection_active')} (${source})`
+            : (baselineReady ? this.t('ota_detection_ready') : this.t('ota_detection_missing'));
+        stateEl.textContent = manualPending && !detected
+            ? `${primary} · ${this.t('ota_detection_manual_pending')}`
+            : primary;
+    }
+
+    async toggleOtaManualGuard() {
+        let snapshot;
+        try {
+            snapshot = await this.getDashboardSnapshot({ force: true });
+        } catch (_) {
+            this.toast(this.t('ota_manual_failed'), 'error');
+            return;
+        }
+        const active = snapshot.OTA_MANUAL_PENDING === 'true';
+        const confirmed = await this.confirmDialog(
+            this.t(active ? 'ota_manual_clear_title' : 'ota_manual_arm_title'),
+            this.t(active ? 'ota_manual_clear_desc' : 'ota_manual_arm_desc'),
+            this.t('btn_confirm'),
+            active ? 'btn-filled' : 'btn-tonal'
+        );
+        if (!confirmed) return;
+        const action = active ? 'ota_clear_manual_flag' : 'ota_set_manual_flag webui';
+        try {
+            const result = await this.execStrict(`. "${this.basePath}/common.sh" 2>/dev/null && ${action} && echo OK`);
+            if (!result.ok || !result.stdout.includes('OK')) throw new Error('ota manual guard command failed');
+            this.toast(this.t(active ? 'ota_manual_cleared' : 'ota_manual_armed'), 'success');
+            this.dashboardSnapshot = null;
+            await this.loadStatus({ force: true });
+        } catch (_) {
+            this.toast(this.t('ota_manual_failed'), 'error');
+        }
+    }
+
     async loadConfig() {
         try {
             const raw = await this.exec(`cat "${this.confFile}" 2>/dev/null`);
@@ -1351,7 +1436,7 @@ done`;
             ENABLED: 'true', REBOOT_THRESHOLD: '3',
             BOOT_TIMEOUT_SEC: '90', OTA_TIMEOUT_SEC: '900',
             LOG_ENABLED: 'true', USER_REBOOT_GRACE_SEC: '30',
-            PROGRESSIVE_RESCUE: 'true', AUTO_REENABLE: 'false', DRY_RUN: 'false',
+            PROGRESSIVE_RESCUE: 'true', AUTO_REENABLE: 'false', DRY_RUN: 'true',
             WATCHDOG_ENGINE: 'shell'
         };
         this.setChecked('#cfg-enabled', true);
@@ -1362,7 +1447,7 @@ done`;
         this.setChecked('#cfg-log', true);
         this.setChecked('#cfg-progressive', true);
         this.setChecked('#cfg-auto-reenable', false);
-        this.setChecked('#cfg-dry-run', false);
+        this.setChecked('#cfg-dry-run', true);
         this.setVal('#cfg-watchdog-poll', 2);
         this.renderWatchdogEngineChoice('shell');
         this.setChecked('#cfg-integrity-enabled', true);
@@ -1422,12 +1507,21 @@ get_dashboard_snapshot`;
             this.setText('#info-last-result', result);
             const failCount = parseInt(s.FAIL_COUNT) || 0;
             this.setText('#info-fail-count', failCount);
-            this.setText('#info-ota', s.OTA_DETECTED === 'true' ? (this.lang === 'zh' ? '是' : 'YES') : (this.lang === 'zh' ? '否' : 'NO'));
+            const otaDetected = s.OTA_DETECTED === 'true' || extra.OTA_DETECTION_ACTIVE === 'true';
+            const otaSource = extra.OTA_DETECTION_SOURCE || 'none';
+            const otaEl = this.qs('#info-ota');
+            if (otaEl) {
+                const yesNo = otaDetected ? (this.lang === 'zh' ? '是' : 'YES') : (this.lang === 'zh' ? '否' : 'NO');
+                otaEl.textContent = otaDetected ? `${yesNo} (${this.formatOtaSource(otaSource)})` : yesNo;
+                otaEl.className = 'value' + (otaDetected ? ' warn' : '');
+            }
+            this.renderOtaDetection(extra, otaDetected);
 
-            // 补丁更新状态（从合并命令结果中读取，无需额外 exec）
+            // Patch flag is schema-based since v3.5.1; snapshot exposes a
+            // normalized boolean rather than testing its on-disk text format.
             const patchEl = this.qs('#info-patch');
             if (patchEl) {
-                const patchDetected = s.PATCH_DETECTED === 'true' || extra.PATCH_FLAG === '1';
+                const patchDetected = s.PATCH_DETECTED === 'true' || extra.PATCH_FLAG_ACTIVE === 'true';
                 patchEl.textContent = patchDetected ? (this.lang === 'zh' ? '是' : 'YES') : (this.lang === 'zh' ? '否' : 'NO');
                 patchEl.className = 'value' + (patchDetected ? ' warn' : '');
             }
@@ -2208,35 +2302,37 @@ done`;
         this.showLoading(false);
     }
 
-    // v2.4: 手动设置/清除补丁更新标记
+    // v2.4: Manually set/clear the patch update flag.
     async togglePatchFlag() {
-            const current = await this.exec(`cat "${this.stateDir}/patch_update_flag" 2>/dev/null`);
-            if (current === '1') {
-            // 清除标记
-            const confirm = await this.confirmDialog(
-                this.lang === 'zh' ? '清除补丁标记' : 'Clear Patch Flag',
-                this.lang === 'zh'
-                    ? '将清除补丁更新标记和补丁失败计数。通常在系统更新成功后自动清除。是否继续？'
-                    : 'Will clear patch update flag and patch fail count. Usually auto-cleared on successful boot. Continue?',
-                this.t('btn_confirm'), 'btn-filled'
-                );
-                if (!confirm) return;
-                await this.exec(`. "${this.basePath}/common.sh" && manual_clear_patch_flag`);
-                this.toast(this.lang === 'zh' ? '补丁标记已清除' : 'Patch flag cleared', 'success');
-            } else {
-            // 设置标记
-            const confirm = await this.confirmDialog(
-                this.lang === 'zh' ? '设置补丁标记' : 'Set Patch Flag',
-                this.lang === 'zh'
-                    ? '将手动设置补丁更新标记。下次启动时 RescueX 会使用补丁专属超时（默认 180 秒），失败时只回滚补丁不清整机。适用于手动系统更新、刷入 Magisk 模块后重启等场景。是否继续？'
-                    : 'Will manually set patch update flag. Next boot will use patch-specific timeout (default 180s), and failures will only roll back patches, not wipe data. Use for manual system updates, flashing Magisk modules, etc. Continue?',
-                this.t('btn_confirm'), 'btn-filled'
-                );
-                if (!confirm) return;
-                await this.exec(`. "${this.basePath}/common.sh" && set_patch_flag`);
-                this.toast(this.lang === 'zh' ? '补丁标记已设置，重启后生效' : 'Patch flag set, effective after reboot', 'success');
-            }
-            this.loadStatus();
+        let active = false;
+        try {
+            const current = await this.execStrict(`. "${this.basePath}/common.sh" 2>/dev/null && if patch_flag_active; then printf '1'; else printf '0'; fi`);
+            if (!current.ok) throw new Error('patch flag status failed');
+            active = current.stdout.trim() === '1';
+        } catch (_) {
+            this.toast(this.t('save_failed'), 'error');
+            return;
+        }
+
+        const confirm = await this.confirmDialog(
+            this.lang === 'zh' ? (active ? '清除补丁标记' : '设置补丁标记') : (active ? 'Clear Patch Flag' : 'Set Patch Flag'),
+            active
+                ? (this.lang === 'zh' ? '将清除补丁更新标记和补丁失败计数。是否继续？' : 'Will clear the patch marker and patch failure count. Continue?')
+                : (this.lang === 'zh' ? '下次启动将使用补丁专属超时。是否继续？' : 'The next boot will use the patch-specific timeout. Continue?'),
+            this.t('btn_confirm'), 'btn-filled'
+        );
+        if (!confirm) return;
+
+        try {
+            const command = active ? 'manual_clear_patch_flag' : 'set_patch_flag';
+            const result = await this.execStrict(`. "${this.basePath}/common.sh" 2>/dev/null && ${command} && echo OK`);
+            if (!result.ok || !result.stdout.includes('OK')) throw new Error('patch flag write failed');
+            this.toast(this.lang === 'zh' ? (active ? '补丁标记已清除' : '补丁标记已设置，重启后生效') : (active ? 'Patch flag cleared' : 'Patch flag set, effective after reboot'), 'success');
+            this.dashboardSnapshot = null;
+            await this.loadStatus({ force: true });
+        } catch (_) {
+            this.toast(this.t('save_failed'), 'error');
+        }
     }
 
     async testWatchdog() {
@@ -2609,7 +2705,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         logo.textContent = 'R';
         const title = document.createElement('h2');
         title.style.cssText = 'margin:0;font-size:18px;color:var(--rx-ink,#1a1a2e);';
-        title.textContent = isZh ? 'RescueX v3.5.10-r2 更新须知' : 'RescueX v3.5.10-r2 Update Notice';
+        title.textContent = isZh ? 'RescueX v3.5.10-r3 更新须知' : 'RescueX v3.5.10-r3 Update Notice';
         header.appendChild(logo);
         header.appendChild(title);
 
@@ -2629,7 +2725,9 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 '一次性安全模式会立即写入禁用标记，下次启动生效，请确认后再布防。',
                 '覆盖更新后如遇异常，可先卸载模块（会彻底清理状态和持久化目录）再重新安装。',
             ]},
-            { title: 'v3.5.10-r2 安全修复', items: [
+            { title: 'v3.5.10-r3 OTA 与可靠性修复', items: [
+                '新增：以确认成功启动的系统构建基线识别厂商魔改 OTA 与大版本更新，检测后自动使用 OTA 长超时。',
+                '新增：无法自动识别时可设置一次性 OTA 手动保护，确认启动成功后自动清除。',
                 '关键修复：RescueX 不再移动、回放或重启 Root 管理器的模块更新队列。',
                 '关键修复：BOOT_TOKEN 变化仅作诊断和启动事务归属，不再单独计为失败或触发救砖。',
                 '修复覆盖更新时旧自检守护未停止、运行时元数据变化导致的完整性误报。',
@@ -2657,7 +2755,9 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 'One-shot safe mode writes disable markers immediately, effective on next boot. Confirm before arming.',
                 'If issues occur after an update, uninstall the module (which fully cleans state and persist dirs) then reinstall.',
             ]},
-            { title: 'v3.5.10-r2 Safety Fixes', items: [
+            { title: 'v3.5.10-r3 OTA and Reliability Fixes', items: [
+                'New: Cross-OEM OTA detection compares the current system build against the last confirmed successful boot and selects the longer OTA timeout.',
+                'New: A one-shot manual OTA guard is available for unsupported update clients and clears after a confirmed successful boot.',
                 'Critical fix: RescueX no longer moves, replays, or reboots from Root-manager module update queues.',
                 'Critical fix: BOOT_TOKEN changes are diagnostics and boot-transaction ownership only; they no longer count as a standalone rescue failure.',
                 'Fixed: Update-time integrity false positives caused by an old daemon and runtime metadata changes.',
@@ -2774,7 +2874,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
             try { localStorage.setItem('rescuex_onboarding_notice_ack', contentHash); } catch (_) {}
             if (timer) { clearInterval(timer); timer = null; }
             overlay.remove();
-            this.toast(isZh ? '欢迎使用 RescueX v3.5.10-r2' : 'Welcome to RescueX v3.5.10-r2', 'success');
+            this.toast(isZh ? '欢迎使用 RescueX v3.5.10-r3' : 'Welcome to RescueX v3.5.10-r3', 'success');
         };
 
         updateButton();

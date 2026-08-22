@@ -14,6 +14,10 @@ trap cleanup EXIT INT TERM
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 MODDIR="$TMP_ROOT/mod"
 . "$ROOT/common.sh"
+# Git for Windows returns nonzero for `sync <file>`; Android/Linux devices
+# provide the real durability primitive. Keep the host test focused on state
+# semantics rather than that filesystem implementation detail.
+sync() { command sync "$@" 2>/dev/null || true; }
 
 STATE_DIR="$TMP_ROOT/mod/webroot/state"
 SNAPSHOT_DIR="$STATE_DIR/snapshots"

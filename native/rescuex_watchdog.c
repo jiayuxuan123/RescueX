@@ -1,5 +1,5 @@
 /*
- * RescueX v3.5.9-r1 optional native watchdog launcher.
+ * RescueX v3.5.10-r3 optional native watchdog launcher.
  *
  * This binary deliberately owns only elapsed-time measurement and PID lifecycle.
  * All policy, health checks, rescue decisions and Android root operations remain

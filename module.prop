@@ -1,7 +1,7 @@
 id=RescueX
 name=RescueX 自动救砖
-version=v3.5.10-r2
-versionCode=350202
+version=v3.5.10-r3
+versionCode=350203
 author=jiayuxuan123
-description=[守护中] Miuix 设备健康面板 / 时间线、快照与一次性安全模式 | v3.5.10-r2
+description=[守护中] 跨厂商 OTA 检测 / 时间线、快照与一次性安全模式 | v3.5.10-r3
 updateJson=https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json

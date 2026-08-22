@@ -7,6 +7,9 @@ trap 'rm -rf "$TD"' EXIT
 # point every mutable state path at this test's private sandbox.
 MODDIR="$ROOT"; RESCUEX_PERSIST_DIR="$TD/persist"; RESCUEX_READ_ONLY=true
 . "$ROOT/common.sh"
+# The Windows host cannot sync individual files like Android/Linux. Test state
+# transitions without conflating them with that platform-specific primitive.
+sync() { command sync "$@" 2>/dev/null || true; }
 RESCUEX_READ_ONLY=false
 STATE_DIR="$TD/state"; PERSIST_DIR="$TD/persist"; SNAPSHOT_DIR="$STATE_DIR/snapshots"
 CONF_FILE="$STATE_DIR/config.conf"; LOG_FILE="$STATE_DIR/rescue.log"; HISTORY_FILE="$STATE_DIR/boot_history"
@@ -22,10 +25,9 @@ command -v v35_init_paths >/dev/null 2>&1 && v35_init_paths
 : > "$MODULE_BASE/modA/disable"; : > "$MODULE_BASE/modB/disable"
 pass=0
 ok() { pass=$((pass+1)); printf 'ok %s\n' "$1"; }
-# 0: A kernel-token transition is a real failure even when RTC is still zero.
-# Android commonly reaches post-fs-data before date is synchronized; BOOT_TOKEN
-# is the authoritative identity in that window and must not be short-circuited
-# by PREV_BOOT_START=0.
+# 0: BOOT_TOKEN identifies a new kernel boot but is diagnostic only. Without
+# an explicit FAILURE/TEST_FAILURE terminal state or valid RTC evidence, a
+# token change must not become an automatic rescue failure.
 (
     PREV_BOOT_RESULT=BOOTING
     PREV_BOOT_START=0
@@ -35,9 +37,25 @@ ok() { pass=$((pass+1)); printf 'ok %s\n' "$1"; }
     get_boot_token() { printf '%s' current-kernel-token; }
     get_valid_epoch() { printf '%s' 0; }
     log() { :; }
-    is_real_boot_failure || { echo 'token transition with zero RTC was ignored' >&2; exit 1; }
+    if is_real_boot_failure; then
+        echo 'token transition with zero RTC was incorrectly counted' >&2
+        exit 1
+    fi
 )
-ok 'early boot token transition counts as failure'
+ok 'early boot token transition remains diagnostic-only'
+# Explicit terminal evidence remains authoritative even before RTC is ready.
+(
+    PREV_BOOT_RESULT=FAILURE
+    PREV_BOOT_START=0
+    PREV_BOOT_END=0
+    PREV_BOOT_TOKEN=previous-kernel-token
+    USER_REBOOT_GRACE_SEC=30
+    get_boot_token() { printf '%s' current-kernel-token; }
+    get_valid_epoch() { printf '%s' 0; }
+    log() { :; }
+    is_real_boot_failure || { echo 'explicit failure with zero RTC was ignored' >&2; exit 1; }
+)
+ok 'explicit failure remains authoritative without RTC'
 # A missing/equal token must still use the conservative RTC path.
 (
     PREV_BOOT_RESULT=BOOTING
@@ -95,7 +113,7 @@ if app_unfreeze; then echo 'app unfreeze unexpectedly succeeded' >&2; exit 1; fi
 ok 'app unfreeze is manual-confirmation only'
 # 7: A normal version upgrade rebuilds the current module baseline; a same-version change still fails.
 IMOD="$TD/imod"; mkdir -p "$IMOD"
-for f in module.prop common.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh; do cp "$ROOT/$f" "$IMOD/$f"; done
+for f in module.prop common.sh ota-detection.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh; do cp "$ROOT/$f" "$IMOD/$f"; done
 mkdir -p "$IMOD/webroot"
 for f in index.html script.js style.css workspace-v2.css; do cp "$ROOT/webroot/$f" "$IMOD/webroot/$f"; done
 MODDIR="$IMOD"
@@ -110,7 +128,7 @@ ok 'same-version integrity change is blocked'
 # 8: service.sh may update module.prop description at runtime; that metadata
 # must not turn a healthy same-version module into a false COMPROMISED state.
 IMOD2="$TD/imod-mutable"; mkdir -p "$IMOD2/webroot"
-for f in module.prop common.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh; do cp "$ROOT/$f" "$IMOD2/$f"; done
+for f in module.prop common.sh ota-detection.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh; do cp "$ROOT/$f" "$IMOD2/$f"; done
 for f in index.html script.js style.css workspace-v2.css; do cp "$ROOT/webroot/$f" "$IMOD2/webroot/$f"; done
 MODDIR="$IMOD2"
 INTEGRITY_MANIFEST_FILE="$STATE_DIR/integrity.manifest"
@@ -158,7 +176,12 @@ chmod 0644 "$PERM_BIN"
 MODDIR="$PERM_MOD"
 ensure_watchdog_executable
 [ -x "$PERM_BIN" ] || exit 1
-[ "$(stat -c '%a' "$PERM_BIN")" = 755 ] || exit 1
+perm_mode=$(stat -c '%a' "$PERM_BIN")
+case "$perm_mode:$(uname -s 2>/dev/null || echo unknown)" in
+    755:*) ;;
+    700:MINGW*|700:MSYS*) ;; # Git for Windows does not preserve group/other execute bits.
+    *) exit 1 ;;
+esac
 ok 'startup repairs installer-stripped native execute bit'
 # 13: a test/integrity process changing BOOTING to FAILURE cannot be overwritten
 # by the late service success commit.

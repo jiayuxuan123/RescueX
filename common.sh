@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.10-r2"
-RX_VERSION_CODE=350202
+RX_VERSION="v3.5.10-r3"
+RX_VERSION_CODE=350203
 
 # ============================================================
 # 路径初始化
@@ -207,7 +207,7 @@ sync_to_persist() {
     mkdir -p "$PERSIST_DIR" 2>/dev/null
     normalize_snapshot_storage
     sync_removable_persist_state_files
-    for f in config.conf whitelist.conf boot_status patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log onboarding_ack good_modules.list rescue_level auto_snapshot_session integrity.manifest integrity_upgrade_pending; do
+    for f in config.conf whitelist.conf boot_status boot_duration_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log onboarding_ack good_modules.list rescue_level auto_snapshot_session integrity.manifest integrity_upgrade_pending; do
         [ -f "$STATE_DIR/$f" ] && cp "$STATE_DIR/$f" "$PERSIST_DIR/$f" 2>/dev/null
     done
     merge_boot_history_persist 2>/dev/null || true
@@ -261,11 +261,20 @@ merge_boot_history_persist() {
     return "$rc"
 }
 
+rescuex_v35_state_has_payload() {
+    local item
+    for item in "$STATE_DIR/v35"/* "$STATE_DIR/v35"/.[!.]* "$STATE_DIR/v35"/..?* \
+        "$STATE_DIR/v35/health.d"/* "$STATE_DIR/v35/snapshot-meta"/*; do
+        [ -f "$item" ] && return 0
+    done
+    return 1
+}
+
 # 从外部持久目录恢复数据（模块更新/重装后自动恢复）
 restore_from_persist() {
     [ ! -d "$PERSIST_DIR" ] && return 1
     local restored=0
-    for f in config.conf whitelist.conf boot_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session integrity.manifest; do
+    for f in config.conf whitelist.conf boot_history boot_duration_history patch_fail_count patch_update_flag rescued_disabled.list rescue_audit.log good_modules.list rescue_level auto_snapshot_session integrity.manifest; do
         if [ -f "$PERSIST_DIR/$f" ] && [ ! -f "$STATE_DIR/$f" ]; then
             cp "$PERSIST_DIR/$f" "$STATE_DIR/$f" 2>/dev/null && restored=$((restored + 1))
         fi
@@ -281,8 +290,11 @@ restore_from_persist() {
         normalize_snapshot_storage
         prune_manual_snapshots_in_dir "$SNAPSHOT_DIR"
     fi
-    # v3.5 private tree restore (only when the in-module copy is absent).
-    if [ -d "$PERSIST_DIR/v35" ] && [ ! -d "$STATE_DIR/v35" ]; then
+    # features-v35.sh creates its empty directory skeleton while common.sh is
+    # sourced. Treat only real payload files as local state; otherwise restore
+    # the prior private tree instead of overwriting it on the next sync.
+    if [ -d "$PERSIST_DIR/v35" ] && ! rescuex_v35_state_has_payload; then
+        rm -rf "$STATE_DIR/v35" 2>/dev/null
         cp -R "$PERSIST_DIR/v35" "$STATE_DIR/v35" 2>/dev/null && restored=$((restored + 1))
         chmod -R go-rwx "$STATE_DIR/v35" 2>/dev/null
     fi
@@ -711,7 +723,9 @@ _dd_read_with_timeout() {
 # ============================================================
 # OTA 检测（覆盖 A/B + BCB + update_engine + recovery）
 # ============================================================
-detect_ota() {
+# Legacy OTA hints retained for compatibility. The cross-OEM wrapper in
+# ota-detection.sh adds last-successful-build comparison and diagnostics.
+detect_ota_legacy() {
     # 方法1: 系统属性
     local ota_state
     ota_state=$(getprop sys.ota.update_state 2>/dev/null)
@@ -2604,8 +2618,22 @@ PATCH_DETECTED=false
 EOF
     fi
 
-    echo "PATCH_FLAG=$(cat "$PATCH_FLAG_FILE" 2>/dev/null || echo 0)"
+    if patch_flag_active; then
+        echo "PATCH_FLAG_ACTIVE=true"
+    else
+        echo "PATCH_FLAG_ACTIVE=false"
+    fi
     echo "PATCH_FAIL_COUNT=$(cat "$PATCH_FAIL_COUNT_FILE" 2>/dev/null || echo 0)"
+    if command -v ota_dashboard_status >/dev/null 2>&1; then
+        ota_dashboard_status
+    else
+        echo "OTA_DETECTION_SOURCE=none"
+        echo "OTA_DETECTION_REASON=none"
+        echo "OTA_DETECTION_ACTIVE=false"
+        echo "OTA_BASELINE_READY=false"
+        echo "OTA_MANUAL_PENDING=false"
+        echo "OTA_DETECTION_CHECKED_AT=0"
+    fi
 
     wd_pid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null || echo 0)
     echo "WD_PID=$wd_pid"
@@ -3545,4 +3573,14 @@ fi
 # schema-aware compatibility overrides cannot be replaced by legacy helpers.
 if [ -f "$MODDIR/v351-safety.sh" ]; then
     . "$MODDIR/v351-safety.sh"
+fi
+
+# System OTA detection is isolated from the rescue state machine. Load it last
+# so its detect_ota wrapper can retain detect_ota_legacy as a fallback.
+if [ -f "$MODDIR/ota-detection.sh" ]; then
+    . "$MODDIR/ota-detection.sh"
+else
+    # A partially applied overlay must retain the proven compatibility detector
+    # instead of leaving post-fs-data without a detect_ota function.
+    detect_ota() { detect_ota_legacy "$@"; }
 fi

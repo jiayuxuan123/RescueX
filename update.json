@@ -1,11 +1,11 @@
 {
-  "version": "v3.5.10-r2",
-  "versionCode": 350202,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.10-r2/RescueX-v3.5.10-r2.zip",
+  "version": "v3.5.10-r3",
+  "versionCode": 350203,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.10-r3/RescueX-v3.5.10-r3.zip",
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md",
   "recommended": true,
   "priority": "normal",
-  "updateMessage": "v3.5.10-r2 治本修复启动统计：按 boot token 终态聚合，救砖/失败会正确反映在成功率上（不再永远100%）；最近救砖时间不再显示从未（早期RTC时间修正）；救砖次数下限补偿。versionCode=350202。",
-  "releaseNotes": "postfs 救砖无 START 行也计入总启动；fix_last_rescue_time 允许 0+已救砖时修正；统计回退状态文件时间。",
-  "sha256": "230956783ead7d03e567f57c00b5cec447a22575b291b3e07805873ef89ab757"
+  "updateMessage": "v3.5.10-r3 新增跨厂商系统 OTA/大版本升级构建基线检测、一次性 OTA 手动保护与升级状态持久化修复。请在不同 ROM、A/B OTA、Recovery/非 A/B OTA、厂商大版本升级路径协助验证；versionCode=350203。",
+  "releaseNotes": "新增系统构建基线、旧 OTA 信号兜底与一次性手动保护；基线仅在 SUCCESS 后推进。请提交不同 ROM 和 OTA 路径的验证结果。",
+  "sha256": "880d3ca15c483c3f3483019bfbc40c40fe345ec4b7a1e624a78823da73f519e1"
 }

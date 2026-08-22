@@ -62,6 +62,9 @@ RescueX CLI（只读）
   simulate        预览当前失败计数下可能采取的救援动作
   rescue status   显示跨 Root 救砖事务状态（只读）
   rescue restore  恢复当前事务实际写入的 disable 标记（需 --apply）
+  ota status      显示系统 OTA 检测状态（只读）
+  ota arm         为下次系统更新启动设置 OTA 保护（需 --apply）
+  ota clear       清除 OTA 手动保护（需 --apply）
   help            显示本帮助
 EOF
 }
@@ -102,6 +105,23 @@ run_cli_command() {
                     rescue_transaction_restore_current
                     ;;
                 *) echo "用法: action.sh --cli rescue status|restore --apply" >&2; return 2 ;;
+            esac
+            ;;
+        ota)
+            command -v ota_print_diagnostics >/dev/null 2>&1 || { echo "OTA 检测扩展不可用" >&2; return 1; }
+            case "${2:-status}" in
+                status) ota_print_diagnostics ;;
+                arm)
+                    [ "${3:-}" = "--apply" ] || { echo "用法: action.sh --cli ota arm --apply" >&2; return 2; }
+                    RESCUEX_READ_ONLY=false
+                    ota_set_manual_flag cli && echo "OTA 手动保护已设置"
+                    ;;
+                clear)
+                    [ "${3:-}" = "--apply" ] || { echo "用法: action.sh --cli ota clear --apply" >&2; return 2; }
+                    RESCUEX_READ_ONLY=false
+                    ota_clear_manual_flag && echo "OTA 手动保护已清除"
+                    ;;
+                *) echo "用法: action.sh --cli ota status|arm --apply|clear --apply" >&2; return 2 ;;
             esac
             ;;
         simulate)
@@ -210,6 +230,12 @@ show_cli_status() {
         echo "已知良好模块: 未建立"
     fi
 
+    if command -v ota_print_diagnostics >/dev/null 2>&1; then
+        echo ""
+        echo "系统 OTA 检测:"
+        ota_print_diagnostics
+    fi
+
     echo ""
     echo "-----------------------------------------"
     echo "系统信息:"
@@ -243,7 +269,7 @@ show_cli_status() {
 # 仅在明确请求时启用 CLI，避免破坏 Root 管理器原有 action 行为。
 # 放在 show_cli_status 定义之后，使 status 子命令在 POSIX sh 中可用。
 if [ "${1:-}" = "--cli" ]; then
-    run_cli_command "${2:-help}" "${3:-}"
+    run_cli_command "${2:-help}" "${3:-}" "${4:-}"
     exit $?
 fi
 

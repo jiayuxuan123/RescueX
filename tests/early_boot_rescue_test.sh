@@ -53,8 +53,9 @@ append_boot_history() { :; }
 _write_status_json() { :; }
 take_snapshot() { printf ''; return 0; }
 
-# Exact device condition that previously failed: early post-fs startup has no
-# usable RTC (BOOT_START=0), but kernel boot identity changed.
+# A BOOT_TOKEN change is observability evidence only: early post-fs startup has
+# no usable RTC, and token changes also occur during legitimate manager/OTA
+# handoffs. It must not independently enter the rescue path.
 PREV_BOOT_RESULT=BOOTING
 PREV_BOOT_START=0
 PREV_BOOT_END=0
@@ -63,8 +64,16 @@ USER_REBOOT_GRACE_SEC=30
 get_boot_token() { printf '%s' current-kernel-token; }
 get_valid_epoch() { printf '%s' 0; }
 
+if is_real_boot_failure; then
+    echo 'FAIL: early token transition was incorrectly classified as a boot failure' >&2
+    exit 1
+fi
+
+# An explicit terminal failure remains authoritative even while the RTC is not
+# ready, and it is the input that may enter the real rescue dispatcher.
+PREV_BOOT_RESULT=FAILURE
 is_real_boot_failure || {
-    echo 'FAIL: early token transition was not classified as a boot failure' >&2
+    echo 'FAIL: explicit early failure was not classified as a boot failure' >&2
     exit 1
 }
 
@@ -106,4 +115,4 @@ commit_verified_rescue early-boot-test 1 || {
 grep -q '^LAST_BOOT_RESULT=RESCUED$' "$STATUS_FILE"
 grep -q '^RESCUE_COUNT=1$' "$STATUS_FILE"
 
-printf 'PASS: early token failure reaches level 1 and commits RESCUED\n'
+printf 'PASS: explicit early failure reaches level 1 and commits RESCUED\n'

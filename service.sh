@@ -270,6 +270,20 @@ update_status_fields "$BOOT_END" 1 "SUCCESS" 0 "$CURRENT_UPTIME" "$service_boot_
     exit 0
 }
 
+# The build baseline is deliberately advanced only after the SUCCESS state is
+# committed. A failed post-OTA boot retains the last known-good identity so
+# every retry keeps the longer OTA timeout.
+if command -v ota_commit_build_baseline >/dev/null 2>&1; then
+    if ota_commit_build_baseline; then
+        log "已提交当前系统构建基线"
+        if ota_manual_flag_active; then
+            ota_clear_manual_flag || log "警告：OTA 手动保护标记清除失败"
+        fi
+    else
+        log "警告：系统构建基线提交失败；将保留旧基线和手动 OTA 保护"
+    fi
+fi
+
 # 修正可能异常的 LAST_RESCUE_TIME（post-fs-data 阶段时钟未同步）
 fix_last_rescue_time
 

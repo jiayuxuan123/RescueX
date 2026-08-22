@@ -38,6 +38,7 @@ MAX_MANUAL_SNAPSHOTS=1
 
 mkdir -p "$STATE_DIR" "$SNAPSHOT_DIR" "$MODULE_BASE" "$MODULE_BASE_KSU" "$MODULE_BASE_AP"
 v35_init_paths
+V35_EXPORT_DIR="$TD/export"
 mkdir -p "$V35_DIR" "$V35_SNAPSHOT_META_DIR" "$V35_HEALTH_DIR" "$V35_EXPORT_DIR"
 
 pass() { printf 'PASS: %s\n' "$1"; }
@@ -154,7 +155,15 @@ for arg in "$@"; do
     case "$arg" in -*) ;; .) ;; *) out="$arg" ;; esac
 done
 [ -n "$out" ] || exit 2
-python3 - "$out" <<'PY'
+PYTHON_BIN=
+for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" --version >/dev/null 2>&1; then
+        PYTHON_BIN=$candidate
+        break
+    fi
+done
+[ -n "$PYTHON_BIN" ] || exit 127
+"$PYTHON_BIN" - "$out" <<'PY'
 import os
 import sys
 import zipfile
@@ -167,6 +176,10 @@ PY
 EOF
 chmod 0700 "$FAKE_BIN/zip"
 printf 'token=super-secret-value\n/data/data/com.example.private/cache\n' > "$LOG_FILE"
+# The host test has no Android boot mode. The diagnostic path only needs a
+# successful manager probe, so model that explicitly rather than relying on
+# host-specific detection behavior.
+detect_boot_mode() { MANAGER=test; return 0; }
 bundle=$(PATH="$FAKE_BIN:$PATH" v35_generate_diagnostic_bundle | sed -n 's/^PATH=//p')
 assert_file "$bundle" '诊断包应创建'
 log_text=$(unzip -p "$bundle" rescue-log.txt)

@@ -21,6 +21,7 @@ required = {
     "uninstall.sh",
     "action.sh",
     "common.sh",
+    "ota-detection.sh",
     "watchdog.sh",
     "integrity.sh",
     "features-v35.sh",
@@ -64,6 +65,27 @@ with zipfile.ZipFile(archive_path) as archive:
     watchdog_info = archive.getinfo("webroot/arm64-v8a/rescuex-watchdog")
     if watchdog_info.file_size == 0:
         raise SystemExit("native watchdog must not be empty")
+
+    required_executables = {
+        "META-INF/com/google/android/update-binary",
+        "customize.sh",
+        "common.sh",
+        "ota-detection.sh",
+        "post-fs-data.sh",
+        "service.sh",
+        "watchdog.sh",
+        "integrity.sh",
+        "v351-safety.sh",
+        "features-v35.sh",
+        "action.sh",
+        "uninstall.sh",
+        "native/build-android.sh",
+        "webroot/arm64-v8a/rescuex-watchdog",
+    }
+    for name in required_executables:
+        mode = (archive.getinfo(name).external_attr >> 16) & 0o777
+        if not (mode & 0o100):
+            raise SystemExit(f"package entry is not owner-executable: {name} ({mode:o})")
 
 with open(archive_path, "rb") as package:
     digest = hashlib.sha256(package.read()).hexdigest()

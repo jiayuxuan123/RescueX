@@ -283,7 +283,7 @@ _three_level_rescue_unlocked() {
 # module.prop is excluded because service.sh intentionally refreshes its description.
 integrity_target_files() {
     local f
-    printf '%s\n' common.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh
+    printf '%s\n' common.sh ota-detection.sh v351-safety.sh watchdog.sh integrity.sh post-fs-data.sh service.sh action.sh features-v35.sh uninstall.sh
     # WebUI 页面文件仅在存在时纳入完整性基线；
     # 无 WebUI 模式（安装时选择移除页面）不会把缺失文件误报为被篡改。
     for f in webroot/index.html webroot/script.js webroot/style.css webroot/workspace-v2.css; do

@@ -185,7 +185,10 @@ log "普通启动有效超时: ${TIMEOUT_TO_USE}s（schema=${CONFIG_SCHEMA_VERSI
 if detect_ota; then
     OTA_DETECTED="true"
     TIMEOUT_TO_USE="$OTA_TIMEOUT_SEC"
-    log "检测到底层 OTA 升级，超时延长至 ${OTA_TIMEOUT_SEC} 秒"
+    log "检测到系统 OTA/大版本更新，超时延长至 ${OTA_TIMEOUT_SEC}s（source=${OTA_DETECTION_SOURCE:-legacy}, reason=${OTA_DETECTION_REASON:-legacy_signal}）"
+fi
+if command -v ota_record_detection_status >/dev/null 2>&1; then
+    ota_record_detection_status "$OTA_DETECTED" || log "警告：OTA 检测诊断状态写入失败"
 fi
 
 # v2.4 新增：检测补丁更新（上层系统更新，与 OTA 隔离）

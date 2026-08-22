@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.5.9-r1 - customize.sh
+# RescueX v3.5.10-r3 - customize.sh
 
 # v3.0.1 改进（专业级升级）：
 # - 三级渐进式救砖支持
@@ -7,7 +7,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.5.10-r2"
+RX_VERSION="v3.5.10-r3"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -163,6 +163,22 @@ PERSIST_DIR="/data/adb/rescuex_data"
 MAX_MANUAL_SNAPSHOTS=12
 mkdir -p "$PERSIST_DIR" 2>/dev/null
 
+# Cross-OEM OTA detection keeps one system-build identity outside the module
+# tree. A missing baseline is captured during installation and subsequently
+# advances only after a confirmed successful boot in service.sh.
+OTA_BASELINE_FILE="$PERSIST_DIR/ota_build_baseline"
+OTA_DETECTION_STATUS_FILE="$STATE_DIR/ota_detection_status"
+if [ -f "$MODPATH/ota-detection.sh" ]; then
+    . "$MODPATH/ota-detection.sh"
+    if ota_initialize_baseline_if_missing; then
+        ui_print "- 系统 OTA 构建基线已就绪"
+    else
+        ui_print "! 未能建立 OTA 构建基线；将在首次成功启动后重试"
+    fi
+else
+    ui_print "! OTA 检测扩展缺失，将使用兼容检测"
+fi
+
 CONFIG_PRESERVED=false
 WHITELIST_PRESERVED=false
 IS_UPGRADE=false
@@ -216,6 +232,7 @@ if [ -n "$OLD_STATE_DIR" ]; then
     fi
     # 历史日志
     [ -f "$OLD_STATE_DIR/boot_history" ] && cp "$OLD_STATE_DIR/boot_history" "$STATE_DIR/boot_history" 2>/dev/null
+    [ -f "$OLD_STATE_DIR/boot_duration_history" ] && cp "$OLD_STATE_DIR/boot_duration_history" "$STATE_DIR/boot_duration_history" 2>/dev/null
     [ -f "$OLD_STATE_DIR/rescue.log" ] && cp "$OLD_STATE_DIR/rescue.log" "$STATE_DIR/rescue.log" 2>/dev/null
     # v2.7.0: 保留 boot_status（累计统计不丢失）
     if [ -f "$OLD_STATE_DIR/boot_status" ]; then
@@ -251,6 +268,7 @@ if [ "$CONFIG_PRESERVED" != "true" ] && [ -d "$PERSIST_DIR" ]; then
     [ -f "$PERSIST_DIR/config.conf" ] && cp "$PERSIST_DIR/config.conf" "$STATE_DIR/config.conf" 2>/dev/null && CONFIG_PRESERVED=true
     [ -f "$PERSIST_DIR/whitelist.conf" ] && cp "$PERSIST_DIR/whitelist.conf" "$STATE_DIR/whitelist.conf" 2>/dev/null && WHITELIST_PRESERVED=true
     [ -f "$PERSIST_DIR/boot_history" ] && cp "$PERSIST_DIR/boot_history" "$STATE_DIR/boot_history" 2>/dev/null
+    [ -f "$PERSIST_DIR/boot_duration_history" ] && cp "$PERSIST_DIR/boot_duration_history" "$STATE_DIR/boot_duration_history" 2>/dev/null
     [ -f "$PERSIST_DIR/boot_status" ] && cp "$PERSIST_DIR/boot_status" "$STATE_DIR/boot_status" 2>/dev/null && ui_print "- 已恢复启动统计"
     [ -f "$PERSIST_DIR/patch_fail_count" ] && cp "$PERSIST_DIR/patch_fail_count" "$STATE_DIR/patch_fail_count" 2>/dev/null
     [ -f "$PERSIST_DIR/auto_snapshot_session" ] && cp "$PERSIST_DIR/auto_snapshot_session" "$STATE_DIR/auto_snapshot_session" 2>/dev/null
@@ -421,7 +439,7 @@ fi
 
 # v2.7.0: 创建持久化目录并同步
 mkdir -p "$PERSIST_DIR" 2>/dev/null
-    for f in config.conf whitelist.conf boot_status boot_history patch_fail_count patch_update_flag first_run rescue_audit.log onboarding_ack good_modules.list rescue_level; do
+    for f in config.conf whitelist.conf boot_status boot_history boot_duration_history patch_fail_count patch_update_flag first_run rescue_audit.log onboarding_ack good_modules.list rescue_level; do
     [ -f "$STATE_DIR/$f" ] && cp "$STATE_DIR/$f" "$PERSIST_DIR/$f" 2>/dev/null
 done
 if [ -d "$SNAPSHOT_DIR" ]; then
@@ -443,6 +461,7 @@ fi
 # === 权限设置 ===
 set_perm "$MODPATH" 0 0 0755
 set_perm "$MODPATH/common.sh"        0 0 0700
+set_perm "$MODPATH/ota-detection.sh" 0 0 0700
 set_perm "$MODPATH/post-fs-data.sh"  0 0 0700
 set_perm "$MODPATH/service.sh"       0 0 0700
 set_perm "$MODPATH/watchdog.sh"      0 0 0700
@@ -471,7 +490,7 @@ set_perm "$SNAPSHOT_DIR" 0 0 0700
 set_perm "$PATCH_BACKUP_DIR" 0 0 0700
 
 # 状态文件权限
-for f in config.conf whitelist.conf boot_status boot_history rescue.log onboarding_ack; do
+for f in config.conf whitelist.conf boot_status boot_history boot_duration_history rescue.log onboarding_ack; do
     [ -f "$STATE_DIR/$f" ] && set_perm "$STATE_DIR/$f" 0 0 0600
 done
 

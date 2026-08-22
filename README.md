@@ -1,6 +1,6 @@
 # RescueX - 自动救砖守护
 
-> **维护状态：活跃**。当前版本 **v3.5.10**（versionCode 35020）。
+> **维护状态：活跃**。当前版本 **v3.5.10-r3**（versionCode 350203）。
 > 安装时可选择是否安装 WebUI；原版 Magisk 可配合 KsuWebUIStandalone 查看 WebUI。
 > 代码开源（MIT），欢迎 fork、Issue 与 PR。
 
@@ -13,7 +13,7 @@ Android 自动救砖模块，兼容 Magisk / KernelSU / APatch。
 - **连续重启救砖**：达到阈值（默认 3 次）自动禁用所有非白名单模块
 - **开机超时看门狗**：开机超过指定时长未完成，自动救砖并重启
 - **三级渐进式救砖**：嫌疑模块禁用 → 全量禁用 → 人工复核
-- **OTA / 补丁更新识别**：区分底层 OTA 和系统补丁，自动调整超时策略
+- **跨厂商 OTA / 大版本升级识别**：以最近一次确认成功启动的系统构建基线为主，兼容 OTA/Recovery/BCB/update_engine 信号兜底；可设置一次性手动 OTA 保护
 - **嫌疑模块追踪**：启动成功后记录已知良好模块列表，下次失败时对比差异精确定位
 - **模块快照管理**：手动拍快照记录当前模块启用状态，出问题可一键回滚
 - **跨 Root 救砖事务恢复**：记录 RescueX 实际写入的模块路径与禁用标记；只恢复本事务拥有的标记，避免跨 Magisk / KernelSU / SukiSU / APatch 误启用同名或用户手动禁用的模块
@@ -56,7 +56,7 @@ Android 自动救砖模块，兼容 Magisk / KernelSU / APatch。
 sh /data/adb/modules/RescueX/action.sh --cli help
 ```
 
-全部 CLI 命令均为只读，不会修改模块、配置或救援状态。支持 `status`、`health`、`timeline`、`module-changes`、`snapshots`、`safe-mode status` 和 `simulate`；其中 `simulate` 只预览基于当前状态可能执行的救援策略。
+默认诊断命令均为只读；会改动状态的命令必须显式附带 `--apply`。支持 `status`、`health`、`timeline`、`module-changes`、`snapshots`、`safe-mode status`、`ota status` 和 `simulate`；其中 `simulate` 只预览基于当前状态可能执行的救援策略。`rescue restore --apply`、`ota arm --apply`、`ota clear --apply` 是唯一会写入模块或 OTA 手动保护状态的 CLI 路径。
 
 ### 兼容性
 
@@ -93,6 +93,7 @@ sh /data/adb/modules/RescueX/action.sh --cli help
 - 首次安装默认 `DRY_RUN=true`（仅记录日志不实际禁用模块），验证逻辑无误后再关闭
 - 白名单中的模块在救砖时不会被禁用，请将关键模块（字体、音效等）加入白名单
 - 一次性安全模式会立即写入禁用标记，下次启动生效，请确认后再布防
+- 无法自动识别的系统更新可在 WebUI 或 CLI 通过 `ota arm --apply` 设置一次性 OTA 手动保护；确认成功启动后会自动清除
 - 覆盖更新后如遇异常，可先卸载模块（会彻底清理状态和持久化目录）再重新安装
 
 ## 致谢 Credits
