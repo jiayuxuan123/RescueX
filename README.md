@@ -1,6 +1,6 @@
 # RescueX - 自动救砖守护
 
-> **维护状态：活跃**。当前版本 **v3.5.10-r3**（versionCode 350203）。
+> **维护状态：活跃**。当前版本 **v3.5.11**（versionCode 350204）。
 > 安装时可选择是否安装 WebUI；原版 Magisk 可配合 KsuWebUIStandalone 查看 WebUI。
 > 代码开源（MIT），欢迎 fork、Issue 与 PR。
 
@@ -13,7 +13,7 @@ Android 自动救砖模块，兼容 Magisk / KernelSU / APatch。
 - **连续重启救砖**：达到阈值（默认 3 次）自动禁用所有非白名单模块
 - **开机超时看门狗**：开机超过指定时长未完成，自动救砖并重启
 - **三级渐进式救砖**：嫌疑模块禁用 → 全量禁用 → 人工复核
-- **跨厂商 OTA / 大版本升级识别**：以最近一次确认成功启动的系统构建基线为主，兼容 OTA/Recovery/BCB/update_engine 信号兜底；可设置一次性手动 OTA 保护
+- **跨厂商 OTA / 大版本升级识别**：以最近一次确认成功启动的系统构建基线为主，厂商更新信号只认易失的 `sys.*` 状态与近期更新痕迹作兜底（常驻属性与常驻 `update_engine` 不再误判为更新中）；可设置一次性手动 OTA 保护
 - **嫌疑模块追踪**：启动成功后记录已知良好模块列表，下次失败时对比差异精确定位
 - **模块快照管理**：手动拍快照记录当前模块启用状态，出问题可一键回滚
 - **跨 Root 救砖事务恢复**：记录 RescueX 实际写入的模块路径与禁用标记；只恢复本事务拥有的标记，避免跨 Magisk / KernelSU / SukiSU / APatch 误启用同名或用户手动禁用的模块
@@ -22,7 +22,8 @@ Android 自动救砖模块，兼容 Magisk / KernelSU / APatch。
 - **轻量完整性自检**：启动成功后建立 RescueX 核心文件 SHA-256 基线，独立守护进程检查
 - **一次性安全模式**：预禁用非白名单模块，下次启动进入安全模式，成功后按事务清单精确恢复
 - **诊断包导出**：一键生成脱敏诊断包（zip/tar.gz/txt 自动适配），可选打开 GitHub Issue 草稿
-- **安装交互选择 WebUI**：安装/更新时按音量键选择是否安装 WebUI（60 秒无操作自动安装）；原版 Magisk 会提示配合 [KsuWebUIStandalone](https://github.com/5ec1cff/KsuWebUIStandalone) 使用
+- **安装交互选择 WebUI**：安装/更新时按音量键选择是否安装 WebUI（60 秒无操作自动安装）；确认偏好后升级自动沿用，不再每次询问，误按音量下也不会删除已有 WebUI；原版 Magisk 会提示配合 [KsuWebUIStandalone](https://github.com/5ec1cff/KsuWebUIStandalone) 使用
+- **可切换 WebUI 外观**：保留 MIUI X 默认界面，另提供 Material Design 3；可选莫奈取色通过 root 读取系统已生成的 Material You 色阶（读不到时降级为近似配色并明确标注）
 - **无 WebUI 模式**：选择后自动移除 WebUI 页面（保留配置与原生看门狗），所有参数可直接修改 `/data/adb/rescuex_data/config.conf` 后重启生效
 - **可选原生看门狗**：arm64 设备可启用 C 编写的单调时钟看门狗，Shell 回退始终可用
 

@@ -1,11 +1,11 @@
 {
-  "version": "v3.5.10-r3",
-  "versionCode": 350203,
-  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.10-r3/RescueX-v3.5.10-r3.zip",
+  "version": "v3.5.11",
+  "versionCode": 350204,
+  "zipUrl": "https://github.com/jiayuxuan123/RescueX/releases/download/v3.5.11/RescueX-v3.5.11.zip",
   "changelog": "https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/CHANGELOG.md",
   "recommended": true,
   "priority": "normal",
-  "updateMessage": "v3.5.10-r3 新增跨厂商系统 OTA/大版本升级构建基线检测、一次性 OTA 手动保护与升级状态持久化修复。请在不同 ROM、A/B OTA、Recovery/非 A/B OTA、厂商大版本升级路径协助验证；versionCode=350203。",
-  "releaseNotes": "新增系统构建基线、旧 OTA 信号兜底与一次性手动保护；基线仅在 SUCCESS 后推进。请提交不同 ROM 和 OTA 路径的验证结果。",
-  "sha256": "880d3ca15c483c3f3483019bfbc40c40fe345ec4b7a1e624a78823da73f519e1"
+  "updateMessage": "v3.5.11 修复手机端底部导航无法切页、OTA 模式长期误报为更新中的问题，移除与救砖无关的 ColorOS 扩展，并新增 MIUI X / Material Design 3 外观选择、Monet 动态配色和持久化 WebUI 安装偏好。versionCode=350204。",
+  "releaseNotes": "手机端导航切页修复、厂商 OTA 信号误报修复、移除 ColorOS 扩展、可切换 WebUI 外观；OTA 检测仍只影响开机超时。",
+  "sha256": "2d90217df8182cd2213a5f370a02197117c53991aafd3957d1f833747f311e1d"
 }

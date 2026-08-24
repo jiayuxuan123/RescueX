@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RescueX v3.5.10-r3 - customize.sh
+# RescueX v3.5.11 - customize.sh
 
 # v3.0.1 改进（专业级升级）：
 # - 三级渐进式救砖支持
@@ -7,7 +7,7 @@
 # - APP 解冻功能
 
 MODID="RescueX"
-RX_VERSION="v3.5.10-r3"
+RX_VERSION="v3.5.11"
 
 # 解析绝对路径（兼容 KSU/Magisk/APatch）
 MODPATH="$(cd "${0%/*}" 2>/dev/null && pwd)"
@@ -80,10 +80,48 @@ elif [ -d "/data/adb/magisk" ]; then
 fi
 ui_print "- 管理器: $MANAGER"
 
-# === WebUI 安装选择 (v3.5.10) ===
-# 音量键选择是否安装 WebUI；60 秒无操作自动安装 WebUI。
-# 原版 Magisk 不支持 WebUI，提示可配合 KsuWebUIStandalone 使用：
-#   https://github.com/5ec1cff/KsuWebUIStandalone
+# v3.5.10+: keep the WebUI choice outside the module tree so module updates do
+# not force the user through the volume-key prompt again.
+PERSIST_DIR="/data/adb/rescuex_data"
+MAX_MANUAL_SNAPSHOTS=12
+HAD_PERSISTED_INSTALL=false
+[ -f "$PERSIST_DIR/config.conf" ] && HAD_PERSISTED_INSTALL=true
+[ -f "$PERSIST_DIR/ota_build_baseline" ] && HAD_PERSISTED_INSTALL=true
+[ -f "$PERSIST_DIR/boot_status" ] && HAD_PERSISTED_INSTALL=true
+mkdir -p "$PERSIST_DIR" 2>/dev/null
+RX_WEBUI_CHOICE_FILE="$PERSIST_DIR/webui_install_preference"
+export PERSIST_DIR RX_WEBUI_CHOICE_FILE
+if [ -f "$MODPATH/webui-choice.sh" ]; then
+    . "$MODPATH/webui-choice.sh"
+    rx_webui_set_locale
+    ui_print "- $(rx_webui_text locale)"
+    ui_print "- $(rx_webui_text timezone)"
+fi
+
+# Find the previous installation before deciding whether a volume-down choice
+# may remove the WebUI. Existing users must not lose their recovery UI because
+# of one accidental key press during an update.
+OLD_STATE_DIR=""
+for old_base in /data/adb/modules /data/adb/ksu/modules /data/adb/ap/modules /data/adb/ap_modules; do
+    if [ -d "$old_base/$MODID/webroot/state" ]; then
+        OLD_STATE_DIR="$old_base/$MODID/webroot/state"
+        break
+    fi
+done
+HAS_PREVIOUS_WEBUI=false
+for old_base in /data/adb/modules /data/adb/ksu/modules /data/adb/ap/modules /data/adb/ap_modules; do
+    if [ -f "$old_base/$MODID/webroot/index.html" ]; then
+        HAS_PREVIOUS_WEBUI=true
+        break
+    fi
+done
+IS_UPGRADE_PRECHECK=false
+[ -n "$OLD_STATE_DIR" ] && IS_UPGRADE_PRECHECK=true
+[ "$HAD_PERSISTED_INSTALL" = true ] && IS_UPGRADE_PRECHECK=true
+
+# === WebUI 安装选择 ===
+# A confirmed preference skips the key listener. Without one, the first choice
+# is recorded as pending and the WebUI asks for confirmation on first entry.
 KSU_WEBUI_URL="https://github.com/5ec1cff/KsuWebUIStandalone"
 
 webui_supported_manager() {
@@ -98,34 +136,50 @@ webui_supported_manager() {
     esac
 }
 
+# Fallback copy is Chinese to match the rest of the installer output. It is only
+# used if webui-choice.sh is missing, which would otherwise mix languages.
+rx_webui_msg() {
+    if command -v rx_webui_text >/dev/null 2>&1; then
+        rx_webui_text "$1"
+    else
+        printf '%s' "$2"
+    fi
+}
+
 prompt_webui_choice() {
     ui_print ""
     ui_print "============================================"
-    ui_print "  WebUI 安装选择"
+    ui_print "  $(rx_webui_msg title 'WebUI 安装选择')"
     ui_print "============================================"
     if webui_supported_manager; then
-        ui_print "  当前管理器支持 WebUI：$MANAGER"
+        ui_print "  $(rx_webui_msg supported '当前管理器支持 WebUI'): $MANAGER"
     else
-        ui_print "  ! 原版 Magisk 不支持 WebUI"
-        ui_print "  ! 如需使用 WebUI，请安装 KsuWebUIStandalone："
+        ui_print "  ! $(rx_webui_msg unsupported '当前管理器可能不支持原生 WebUI')"
+        ui_print "  ! KsuWebUIStandalone:"
         ui_print "  $KSU_WEBUI_URL"
     fi
     ui_print ""
-    ui_print "  [音量+] 安装 WebUI（推荐）"
-    ui_print "  [音量-] 不安装（无 WebUI 模式，可手动改配置）"
-    ui_print "  60 秒内无操作将自动安装 WebUI"
+    ui_print "  $(rx_webui_msg install '[音量+] 安装 WebUI / Install WebUI')"
+    ui_print "  $(rx_webui_msg skip '[音量-] 暂不安装 WebUI / Skip WebUI')"
+    ui_print "  $(rx_webui_msg timeout '60 秒无操作将安装 WebUI / No input in 60s: install')"
+    [ "$HAS_PREVIOUS_WEBUI" = true ] && ui_print "  ! $(rx_webui_msg legacy_warning '检测到已有 WebUI；本次音量下选择不会删除它')"
     ui_print "============================================"
 }
 
 wait_webui_volkey() {
-    # 无按键检测环境时直接返回默认（安装 WebUI）
+    # Without getevent, keep the historical safe default: install WebUI.
     command -v getevent >/dev/null 2>&1 || return 0
     local i=0 ev
     while [ "$i" -lt 60 ]; do
-        ev=$(timeout 1 getevent -lc 1 2>/dev/null)
+        if command -v timeout >/dev/null 2>&1; then
+            ev=$(timeout 1 getevent -lc 1 2>/dev/null)
+        else
+            ev=$(getevent -lc 1 2>/dev/null)
+        fi
+        ev=$(printf '%s' "$ev" | tr '[:lower:]' '[:upper:]')
         case "$ev" in
-            *VOLUMEUP*) return 0 ;;
-            *VOLUMEDOWN*) return 1 ;;
+            *VOLUMEUP*|*KEY_VOLUMEUP*) return 0 ;;
+            *VOLUMEDOWN*|*KEY_VOLUMEDOWN*) return 1 ;;
         esac
         i=$((i + 1))
     done
@@ -133,15 +187,41 @@ wait_webui_volkey() {
 }
 
 INSTALL_WEBUI=true
-prompt_webui_choice
-if wait_webui_volkey; then
-    ui_print "- 已选择：安装 WebUI"
-    INSTALL_WEBUI=true
+WEBUI_SELECTED_CHOICE=install
+WEBUI_PREF_CONFIRMED=false
+if command -v rx_webui_choice_is_confirmed >/dev/null 2>&1 && rx_webui_choice_is_confirmed; then
+    WEBUI_PREF_CONFIRMED=true
+    WEBUI_SELECTED_CHOICE=$(rx_webui_choice_read CHOICE)
+    if [ "$WEBUI_SELECTED_CHOICE" = install ]; then
+        INSTALL_WEBUI=true
+        ui_print "- $(rx_webui_msg auto_install '已按已确认偏好自动安装 WebUI')"
+    else
+        INSTALL_WEBUI=false
+        ui_print "- $(rx_webui_msg auto_skip '已按已确认偏好跳过 WebUI')"
+    fi
 else
-    ui_print "- 已选择：无 WebUI 模式（移除 WebUI 页面，配置可手动修改）"
-    INSTALL_WEBUI=false
+    prompt_webui_choice
+    if wait_webui_volkey; then
+        WEBUI_SELECTED_CHOICE=install
+        INSTALL_WEBUI=true
+        ui_print "- $(rx_webui_msg selected_install '已选择：安装 WebUI')"
+    else
+        WEBUI_SELECTED_CHOICE=skip
+        INSTALL_WEBUI=false
+        # On an update, never delete a known-good existing WebUI before the user
+        # has confirmed the new persistent choice from inside the WebUI.
+        if [ "$IS_UPGRADE_PRECHECK" = true ] && [ "$HAS_PREVIOUS_WEBUI" = true ]; then
+            INSTALL_WEBUI=true
+            WEBUI_SELECTED_CHOICE=install
+            ui_print "- $(rx_webui_msg legacy_warning '检测到已有 WebUI；本次音量下选择不会删除它')"
+        else
+            ui_print "- $(rx_webui_msg selected_skip '已选择：暂不安装 WebUI')"
+        fi
+    fi
+    if command -v rx_webui_choice_write_pending >/dev/null 2>&1; then
+        rx_webui_choice_write_pending "$WEBUI_SELECTED_CHOICE" volume || ui_print "! WebUI 偏好保存失败，本次安装仍会继续"
+    fi
 fi
-
 
 # === 创建状态目录 ===
 STATE_DIR="$MODPATH/webroot/state"
@@ -150,18 +230,12 @@ PATCH_BACKUP_DIR="$STATE_DIR/patch_backup"
 mkdir -p "$STATE_DIR" "$SNAPSHOT_DIR" "$PATCH_BACKUP_DIR"
 
 # === 升级时保留旧版用户配置 ===
-OLD_STATE_DIR=""
-for old_base in /data/adb/modules /data/adb/ksu/modules /data/adb/ap/modules /data/adb/ap_modules; do
-    if [ -d "$old_base/$MODID/webroot/state" ]; then
-        OLD_STATE_DIR="$old_base/$MODID/webroot/state"
-        break
-    fi
-done
+# OLD_STATE_DIR and PERSIST_DIR are prepared before the WebUI prompt so the
+# choice can be applied without losing the previous installation context.
 
 # v2.7.0: 持久化目录（模块更新不丢失）
-PERSIST_DIR="/data/adb/rescuex_data"
-MAX_MANUAL_SNAPSHOTS=12
-mkdir -p "$PERSIST_DIR" 2>/dev/null
+# PERSIST_DIR is initialized above; keep the value visible for the migration
+# and OTA sections below.
 
 # Cross-OEM OTA detection keeps one system-build identity outside the module
 # tree. A missing baseline is captured during installation and subsequently
@@ -454,7 +528,7 @@ chmod 0700 "$PERSIST_DIR" 2>/dev/null
 # 保留 webroot/state（配置/状态）与 webroot/arm64-v8a（原生看门狗二进制）。
 if [ "$INSTALL_WEBUI" != "true" ]; then
     ui_print "- 无 WebUI 模式：移除 WebUI 页面文件"
-    rm -f "$MODPATH/webroot/index.html" "$MODPATH/webroot/script.js" "$MODPATH/webroot/style.css" "$MODPATH/webroot/workspace-v2.css" 2>/dev/null
+    rm -f "$MODPATH/webroot/index.html" "$MODPATH/webroot/script.js" "$MODPATH/webroot/style.css" "$MODPATH/webroot/workspace-v2.css" "$MODPATH/webroot/md3-theme.css" 2>/dev/null
     rm -rf "$MODPATH/webroot/assets" 2>/dev/null
 fi
 
@@ -462,14 +536,18 @@ fi
 set_perm "$MODPATH" 0 0 0755
 set_perm "$MODPATH/common.sh"        0 0 0700
 set_perm "$MODPATH/ota-detection.sh" 0 0 0700
+set_perm "$MODPATH/monet-palette.sh" 0 0 0700
 set_perm "$MODPATH/post-fs-data.sh"  0 0 0700
 set_perm "$MODPATH/service.sh"       0 0 0700
 set_perm "$MODPATH/watchdog.sh"      0 0 0700
 set_perm "$MODPATH/integrity.sh"     0 0 0700
 set_perm "$MODPATH/uninstall.sh"     0 0 0700
-set_perm "$MODPATH/action.sh"        0 0 0700
 set_perm "$MODPATH/customize.sh"     0 0 0700
+# v3.5.10+: preference helper remains in no-WebUI mode so a later reinstall
+# can still inspect/reset the external choice without losing the state schema.
+set_perm "$MODPATH/webui-choice.sh" 0 0 0700
 set_perm "$MODPATH/module.prop" 0 0 0644
+
 # v3.5.9: remove the obsolete backup that could roll metadata back after an overlay update.
 rm -f "$MODPATH/module.prop.bak" "$MODPATH/module.prop.tmp."* 2>/dev/null
 set_perm "$MODPATH/README.md" 0 0 0644
@@ -484,6 +562,7 @@ set_perm "$MODPATH/webroot/assets"    0 0 0755
 set_perm "$MODPATH/webroot/index.html" 0 0 0644
 set_perm "$MODPATH/webroot/style.css"        0 0 0644
 set_perm "$MODPATH/webroot/workspace-v2.css" 0 0 0644
+set_perm "$MODPATH/webroot/md3-theme.css"   0 0 0644
 set_perm "$MODPATH/webroot/script.js"         0 0 0644
 set_perm "$STATE_DIR" 0 0 0700
 set_perm "$SNAPSHOT_DIR" 0 0 0700

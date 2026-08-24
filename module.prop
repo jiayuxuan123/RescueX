@@ -1,7 +1,7 @@
 id=RescueX
 name=RescueX 自动救砖
-version=v3.5.10-r3
-versionCode=350203
+version=v3.5.11
+versionCode=350204
 author=jiayuxuan123
-description=[守护中] 跨厂商 OTA 检测 / 时间线、快照与一次性安全模式 | v3.5.10-r3
+description=[守护中] 自动救砖守护、跨厂商 OTA 检测与可切换 WebUI 外观 | v3.5.11
 updateJson=https://raw.githubusercontent.com/jiayuxuan123/RescueX/master/update.json

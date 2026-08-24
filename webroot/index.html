@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-ui-theme="miuix">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +7,17 @@
     <title>RescueX 自动救砖</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="workspace-v2.css">
+    <link rel="stylesheet" href="md3-theme.css">
+    <script>
+        (function () {
+            try {
+                var theme = localStorage.getItem('rescuex_ui_theme');
+                document.documentElement.dataset.uiTheme = theme === 'md3' ? 'md3' : 'miuix';
+            } catch (_) {
+                document.documentElement.dataset.uiTheme = 'miuix';
+            }
+        }());
+    </script>
 </head>
 <body>
     <div class="loading-bar" id="loading-bar"></div>
@@ -19,10 +30,11 @@
                 <div class="logo-icon">R</div>
                 <div class="brand-text">
                     <div class="title">RescueX</div>
-                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.5.10-r3</div>
+                    <div class="subtitle" id="app-subtitle">自动救砖守护 v3.5.11</div>
                 </div>
             </div>
             <div class="appbar-actions">
+                <button class="appearance-launcher" id="btn-appearance" type="button" data-action="showAppearance" aria-label="选择 WebUI 外观" title="选择 WebUI 外观" data-i18n="appearance">外观</button>
                 <button class="icon-btn workspace-menu-btn" type="button" aria-label="打开导航" aria-expanded="false" title="导航">&#9776;</button>
                 <button class="icon-btn" id="btn-help" title="帮助" aria-label="帮助">?</button>
                 <div class="lang-switch">
@@ -121,6 +133,14 @@
                     <div class="info-tile">
                         <div class="label" data-i18n="rescue_count">救砖次数</div>
                         <div class="value" id="info-rescue-count">0</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="system_timezone">系统时区</div>
+                        <div class="value text-mono" id="info-timezone">--</div>
+                    </div>
+                    <div class="info-tile">
+                        <div class="label" data-i18n="webui_preference">WebUI 更新偏好</div>
+                        <div class="value" id="info-webui-preference">--</div>
                     </div>
                 </div>
 
@@ -466,15 +486,15 @@
             </div>
         </div>
 
-        <div class="card compact-card" data-workspace-group="recovery">
+        <div class="card compact-card" data-workspace-group="logs">
             <div class="card-header">
                 <h2><span class="icon">↗</span> <span data-i18n="update_notice">更新公告</span></h2>
             </div>
             <div class="card-body">
                 <div class="notice-block">
-                        <div class="notice-kicker text-mono">v3.5.10-r3</div>
-                    <div class="notice-title" data-i18n="update_notice_title">系统 OTA 检测与升级可靠性修复</div>
-                    <p class="desc-text" data-i18n="update_notice_desc">v3.5.10-r3 新增跨厂商系统 OTA 构建基线检测和一次性手动保护；系统更新后的首次启动会自动使用更长超时，失败重试不会覆盖旧基线。</p>
+                        <div class="notice-kicker text-mono">v3.5.11</div>
+                    <div class="notice-title" data-i18n="update_notice_title">手机端导航与 OTA 识别修复</div>
+                    <p class="desc-text" data-i18n="update_notice_desc">v3.5.11 修复手机端底部导航无法切页、厂商 OTA 信号常驻误报，并新增 MIUI X / Material Design 3 外观选择、Monet 动态配色与持久化 WebUI 安装偏好。</p>
                     <div class="section-actions">
                         <button class="btn btn-filled" data-action="checkUpdate" data-i18n="check_update">检查更新</button>
                         <button class="btn btn-tonal" data-action="openRepository" data-i18n="open_source_repo">开源仓库</button>
@@ -556,7 +576,7 @@
                 <div class="info-grid">
                     <div class="info-tile">
                         <div class="label" data-i18n="version">版本</div>
-                        <div class="value text-mono">v3.5.10-r3</div>
+                        <div class="value text-mono">v3.5.11</div>
                     </div>
                     <div class="info-tile">
                         <div class="label" data-i18n="manager">管理器</div>
@@ -567,7 +587,7 @@
                         <div class="value text-mono">jiayuxuan123/RescueX</div>
                     </div>
                 </div>
-                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.5.10-r3：新增跨厂商系统 OTA 检测、一次性手动保护与升级状态持久化修复。</p>
+                <p class="desc-text mt-16" data-i18n="about_desc">RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.5.11 修复手机端导航与 OTA 信号误报，并新增可切换 WebUI 外观。</p>
                 <div class="section-actions">
                     <button class="btn btn-text btn-sm" data-action="checkUpdate" data-i18n="check_update">检查更新</button>
                     <button class="btn btn-text btn-sm" data-action="showFeatures" data-i18n="feature_intro">功能介绍</button>

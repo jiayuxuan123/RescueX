@@ -63,7 +63,7 @@ grep -q "$version" native/rescuex_watchdog.c
 grep -q "onboarding_ack" webroot/script.js
 grep -q "module.prop is excluded" v351-safety.sh
 [ ! -e module.prop.bak ] || { printf 'STALE_MODULE_PROP_BACKUP_PRESENT\n' >&2; exit 1; }
-grep -q "const ONBOARDING_NOTICE_REVISION = 'r6';" webroot/script.js
+grep -q "const ONBOARDING_NOTICE_REVISION = 'r7';" webroot/script.js
 grep -q 'versionChanged || noticeChanged' webroot/script.js
 grep -q 'const ONBOARDING_COUNTDOWN_SECONDS = 8;' webroot/script.js
 grep -q 'recommended' update.json

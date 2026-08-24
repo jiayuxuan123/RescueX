@@ -14,8 +14,8 @@
 # - 安全文件 I/O：safe_write / safe_read
 
 # 全局版本号（所有脚本统一引用）
-RX_VERSION="v3.5.10-r3"
-RX_VERSION_CODE=350203
+RX_VERSION="v3.5.11"
+RX_VERSION_CODE=350204
 
 # ============================================================
 # 路径初始化
@@ -74,6 +74,13 @@ _rescuex_init_paths() {
     # v2.7.0: 持久数据目录（模块更新时不会丢失）
     # 测试环境可显式隔离持久状态；生产环境仍使用既有默认目录。
     PERSIST_DIR="${RESCUEX_PERSIST_DIR:-/data/adb/rescuex_data}"
+
+    # Shared WebUI installer preference reader. It is intentionally external to
+    # the rescue state machine; sourcing it has no runtime side effects.
+    WEBUI_CHOICE_SCRIPT="$MODDIR/webui-choice.sh"
+    if [ -f "$WEBUI_CHOICE_SCRIPT" ]; then
+        . "$WEBUI_CHOICE_SCRIPT"
+    fi
 
     # 跨 Root 救砖事务 journal：每条目标绑定管理器、根目录和实际路径，
     # 恢复时只删除 RescueX 在该路径写入的 disable 标记。
@@ -790,6 +797,50 @@ detect_ota_legacy() {
 # 与底层 OTA（detect_ota）隔离，互不干扰
 # 返回 0=检测到补丁更新 1=未检测到
 # ============================================================
+
+# 判断路径是否为“近期”更新痕迹。时钟异常或时间戳过旧都不算更新窗口，
+# 避免厂商常驻文件/目录让开机超时被永久拉长。
+_patch_path_recent() {
+    local path="$1" window="${2:-3600}" now mtime
+    [ -e "$path" ] 2>/dev/null || return 1
+    now=$(date +%s 2>/dev/null)
+    mtime=$(stat -c %Y "$path" 2>/dev/null || stat -f %m "$path" 2>/dev/null || echo 0)
+    case "$now" in ''|*[!0-9]*) return 1 ;; esac
+    case "$mtime" in ''|*[!0-9]*|0) return 1 ;; esac
+    [ "$now" -ge 1577836800 ] 2>/dev/null || return 1
+    [ "$mtime" -le "$now" ] 2>/dev/null || return 1
+    [ "$((now - mtime))" -lt "$window" ] 2>/dev/null
+}
+
+_patch_marker_recent() {
+    [ -f "$1" ] 2>/dev/null || return 1
+    _patch_path_recent "$1" "${2:-3600}"
+}
+
+_patch_dir_has_recent_payload() {
+    local dir="$1" entry
+    [ -d "$dir" ] 2>/dev/null || return 1
+    for entry in "$dir"/*.zip "$dir"/payload.bin; do
+        [ -f "$entry" ] 2>/dev/null || continue
+        _patch_path_recent "$entry" 3600 && return 0
+    done
+    return 1
+}
+
+_patch_state_active() {
+    local lower
+    lower=$(printf '%s' "${1:-}" | tr -d ' \t\r\n' | tr '[:upper:]' '[:lower:]')
+    case "$lower" in
+        ''|0|false|none|unknown|idle|complete|completed|success|successful|failed|failure|error|cancel|cancelled|canceled)
+            return 1
+            ;;
+    esac
+    case "$lower" in
+        *download*|*install*|*updat*|*verify*|*apply*|*pending*|*running*|*writing*|*prepar*) return 0 ;;
+    esac
+    return 1
+}
+
 _detect_patch_update_legacy() {
     # 优先级 1: 用户/外部工具手动设置的持久标记
     if [ -f "$PATCH_FLAG_FILE" ]; then
@@ -799,29 +850,32 @@ _detect_patch_update_legacy() {
     fi
 
     # 优先级 2: ColorOS / OPPO 系统更新
-    # 路径：/data/oplus/ota、/cache/ota、oplus 侧属性
-    if [ -f "/data/oplus/ota/update_status" ] 2>/dev/null; then
+    # 只认“正在更新”的易失状态：常驻的状态文件或空的下载目录不能永久算作补丁窗口，
+    # 否则装了模块的 ColorOS 机型每次开机都会被判定为更新中。
+    if _patch_marker_recent "/data/oplus/ota/update_status"; then
         return 0
     fi
-    if [ -d "/data/oplus/ota_package" ] 2>/dev/null; then
+    if _patch_dir_has_recent_payload "/data/oplus/ota_package"; then
         return 0
     fi
     local oplus_state
     oplus_state=$(getprop sys.ota.update_state 2>/dev/null)
-    if [ -n "$oplus_state" ] && [ "$oplus_state" != "0" ] && [ "$oplus_state" != "IDLE" ]; then
+    if _patch_state_active "$oplus_state"; then
         return 0
     fi
-    # OPPO/realme 的 ro.build.ota 可能存在升级标记
-    if getprop ro.oppo.update_state 2>/dev/null | grep -qi "updating\|installing"; then
+    if _patch_state_active "$(getprop sys.oplus.ota.state 2>/dev/null)"; then
+        return 0
+    fi
+    if getprop sys.oppo.update_state 2>/dev/null | grep -qi "updating\|installing"; then
         return 0
     fi
 
     # 优先级 3: MIUI / HyperOS 系统更新
     # 路径：/data/miui/ota、/cache/miui
-    if [ -f "/data/miui/ota/update.status" ] 2>/dev/null; then
+    if _patch_marker_recent "/data/miui/ota/update.status"; then
         return 0
     fi
-    if [ -d "/data/miui/ota_package" ] 2>/dev/null; then
+    if _patch_dir_has_recent_payload "/data/miui/ota_package"; then
         return 0
     fi
     if getprop sys.miui.update_state 2>/dev/null | grep -qi "updating\|installing"; then
@@ -829,7 +883,7 @@ _detect_patch_update_legacy() {
     fi
 
     # 优先级 4: vivo / OriginOS 系统更新
-    if [ -f "/data/bbk/ota/update_status" ] 2>/dev/null; then
+    if _patch_marker_recent "/data/bbk/ota/update_status"; then
         return 0
     fi
     if getprop sys.vivo.update_state 2>/dev/null | grep -qi "updating\|installing"; then
@@ -837,25 +891,17 @@ _detect_patch_update_legacy() {
     fi
 
     # 优先级 5: Samsung One UI 系统更新
-    if [ -f "/data/system/updates.xml" ] 2>/dev/null; then
+    if _patch_marker_recent "/data/system/updates.xml"; then
         return 0
     fi
 
     # 优先级 6: 通用 Android System Update（Package Installer 上层更新）
-    if [ -f "/data/ota/last_install" ] 2>/dev/null; then
-        # 检查最近修改时间，5 分钟内视为补丁更新窗口。时钟异常时跳过，避免常驻文件误报。
-        local now mtime
-        now=$(date +%s 2>/dev/null)
-        mtime=$(stat -c %Y "/data/ota/last_install" 2>/dev/null || stat -f %m "/data/ota/last_install" 2>/dev/null || echo 0)
-        case "$now" in ''|*[!0-9]*) now=0 ;; esac
-        case "$mtime" in ''|*[!0-9]*) mtime=0 ;; esac
-        if [ "$now" -ge 1577836800 ] 2>/dev/null && [ "$mtime" -gt 0 ] && [ "$mtime" -le "$now" ] && [ "$((now - mtime))" -lt 300 ]; then
-            return 0
-        fi
+    if _patch_marker_recent "/data/ota/last_install" 300; then
+        return 0
     fi
 
     # 优先级 7: /cache 分区下的更新包残留
-    if [ -f "/cache/update.zip" ] 2>/dev/null || [ -f "/cache/ota.zip" ] 2>/dev/null; then
+    if _patch_marker_recent "/cache/update.zip" || _patch_marker_recent "/cache/ota.zip"; then
         return 0
     fi
 
@@ -2632,7 +2678,19 @@ EOF
         echo "OTA_DETECTION_ACTIVE=false"
         echo "OTA_BASELINE_READY=false"
         echo "OTA_MANUAL_PENDING=false"
+        echo "OTA_VENDOR_SIGNAL=false"
+        echo "OTA_VENDOR_REASON=none"
+        echo "OTA_TIMEZONE=${TZ:-UTC}"
         echo "OTA_DETECTION_CHECKED_AT=0"
+    fi
+    if command -v rx_webui_choice_status >/dev/null 2>&1; then
+        rx_webui_choice_status
+    else
+        echo "WEBUI_PREF_STATE=NONE"
+        echo "WEBUI_PREF_CHOICE=none"
+        echo "WEBUI_PREF_SOURCE=none"
+        echo "WEBUI_PREF_PENDING=false"
+        echo "WEBUI_PREF_CONFIRMED=false"
     fi
 
     wd_pid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null || echo 0)

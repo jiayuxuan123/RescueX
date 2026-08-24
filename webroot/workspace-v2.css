@@ -67,26 +67,41 @@ body {
 }
 .appbar-actions { display: flex; align-items: center; gap: 8px; padding-bottom: 1px; }
 .icon-btn { display: none; }
+/* Phone-first: keep the status refresh action in the app bar on every view.
+ * The overview quick actions are hidden outside the overview, so without this
+ * the refresh action would be unreachable in the other four views. */
+.workspace-menu-btn {
+  display: inline-grid !important;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  place-items: center;
+  border: 1px solid var(--mi-line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--mi-text);
+  font-size: 19px;
+}
 .lang-switch {
   display: inline-flex !important;
-  height: 38px;
+  height: 42px;
   padding: 3px;
   gap: 1px;
   flex: none;
   border: 0;
-  border-radius: 19px;
+  border-radius: 21px;
   background: #eaebef;
   overflow: visible;
 }
 .lang-btn {
   display: inline-flex !important;
-  min-width: 39px;
-  min-height: 32px;
+  min-width: 40px;
+  min-height: 36px;
   align-items: center;
   justify-content: center;
   padding: 0 9px;
   border: 0;
-  border-radius: 16px;
+  border-radius: 18px;
   background: transparent;
   color: #73757d;
   font-size: 12px;
@@ -311,7 +326,7 @@ input[type="number"], input[type="text"], select {
   .appbar { min-height: 102px; padding-top: 14px; }
   .title { font-size: 33px; }
   .subtitle { font-size: 14px; }
-  .lang-btn { min-width: 35px; padding: 0 7px; }
+  .lang-btn { min-width: 36px; min-height: 36px; padding: 0 7px; }
   .status-hero { padding-right: 15px; padding-left: 15px; }
   .card-header, .card-body { padding-right: 16px; padding-left: 16px; }
 }
@@ -367,5 +382,183 @@ input[type="number"], input[type="text"], select {
   .appbar .brand-text .subtitle { font-size: 14px; }
 }
 
-/* Navigation state is controlled by script.js. */
-.workspace-hidden { display: none !important; }
+body { min-width: 0; }
+
+/* Phone-first tap targets: the checkbox itself is small, so the whole label row
+ * must stay comfortably tappable. */
+.checkbox-label { min-height: 44px; padding: 10px 0; gap: 12px; }
+.checkbox-label input[type="checkbox"]:not(.toggle-input) { width: 20px; height: 20px; flex: 0 0 auto; }
+
+/* Navigation state is controlled by script.js. Without this rule every group
+ * card stays visible, so the mobile bottom bar looks like a single long page.
+ * The attribute selector keeps working for hero/grid elements that declare an
+ * explicit display value. */
+.workspace-hidden,
+.workspace-hidden[class] { display: none !important; }
+.card[hidden], .status-hero[hidden], .workspace-home-actions[hidden] { display: none !important; }
+
+.doc-modal {
+  display: flex;
+  min-width: 0;
+  max-height: min(80vh, calc(100dvh - 32px));
+  flex-direction: column;
+  overflow: hidden;
+}
+.doc-modal > div:not(.doc-actions) {
+  min-width: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.doc-modal h2,
+.doc-modal .doc-actions { flex-shrink: 0; }
+.doc-modal p,
+.doc-modal li,
+.doc-modal .privacy-section,
+.doc-modal code {
+  min-width: 0;
+  max-width: 100%;
+}
+.doc-modal code {
+  display: inline-block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.45;
+  vertical-align: baseline;
+}
+.webui-preference-modal {
+  min-width: 0;
+  max-width: 520px;
+}
+.webui-preference-modal p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.webui-preference-buttons {
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+.webui-preference-buttons .btn {
+  min-width: 132px;
+  flex: 1 1 132px;
+}
+.appearance-modal {
+  min-width: 0;
+  max-width: 520px;
+}
+.appearance-modal p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.appearance-options {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 4px 0 18px;
+}
+.appearance-option {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--rx-border, #dedee2);
+  border-radius: 12px;
+  background: var(--rx-surface, #fff);
+  color: var(--rx-ink, #171717);
+  font: inherit;
+  text-align: left;
+}
+.appearance-option[aria-pressed="true"] {
+  border-color: var(--rx-blue, #2f6feb);
+  background: var(--rx-surface-strong, #eeeeef);
+}
+.appearance-option strong,
+.appearance-option span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.appearance-option span {
+  color: var(--rx-muted, #6e6e73);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.appearance-monet {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--rx-border, #dedee2);
+  border-radius: 12px;
+  background: var(--rx-surface, #fff);
+}
+.appearance-monet input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+.appearance-monet > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.appearance-monet strong,
+.appearance-monet span span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.appearance-monet span span {
+  color: var(--rx-muted, #6e6e73);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.appearance-monet.is-disabled {
+  opacity: .6;
+}
+.appearance-launcher {
+  display: inline-flex;
+  min-width: 48px;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid var(--rx-border, #dedee2);
+  border-radius: 20px;
+  background: var(--rx-surface, #fff);
+  color: var(--rx-ink, #171717);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+/* Phones are the primary target, so the status refresh action must stay
+ * reachable in every view instead of only in the overview quick actions. */
+@media (max-width: 520px) {
+  .appbar { flex-wrap: nowrap; gap: 8px; }
+  .appbar .brand { flex: 1 1 auto; width: auto; gap: 8px; }
+  .appbar .logo-icon { width: 34px; height: 34px; }
+  .appbar .brand-text .title { font-size: 22px; }
+  .appbar .brand-text .subtitle { font-size: 11px; }
+  .appbar-actions { flex: 0 0 auto; width: auto; gap: 4px; }
+  .workspace-menu-btn { width: 38px; height: 38px; min-width: 38px; font-size: 18px; }
+  .appearance-launcher { flex: 0 0 auto; min-width: 48px; padding: 0 9px; }
+}
+@media (max-width: 360px) {
+  .appbar .brand-text .title { font-size: 20px; }
+  .appbar .brand-text .subtitle { font-size: 10px; }
+  #btn-help { display: none; }
+  .appearance-launcher { min-width: 46px; padding: 0 8px; font-size: 11px; }
+  .appbar-actions { gap: 3px; }
+  .lang-switch { margin-left: 0; }
+}
+html[data-ui-theme="md3"] .appearance-option[aria-pressed="true"] {
+  border-color: var(--md-primary, #006c4c);
+  background: var(--rx-green-soft, #c8f2d9);
+}
+@media (max-width: 420px) {
+  .webui-preference-buttons { flex-direction: column; }
+  .webui-preference-buttons .btn { width: 100%; }
+}
+

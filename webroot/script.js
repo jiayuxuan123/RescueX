@@ -1,4 +1,4 @@
-/* RescueX v3.5.10-r3 - WebUI controller
+/* RescueX v3.5.11 - WebUI controller
  * MD3 + i18n 中英切换 + 模块选择器 + 配置导入导出 + 快照 + 诊断报告
  * 兼容：KSU / Magisk v27+ / MMRL
  *
@@ -12,11 +12,11 @@
 'use strict';
 
 // === 安全校验常量 ===
-const APP_VERSION = 'v3.5.10-r3';
-const APP_VERSION_CODE = 350203;
-// v3.5.10-r3: cross-OEM system OTA detection is based on the last confirmed
-// successful system-build identity; Root manager update queues stay isolated.
-const ONBOARDING_NOTICE_REVISION = 'r6';
+const APP_VERSION = 'v3.5.11';
+const APP_VERSION_CODE = 350204;
+// v3.5.11: cross-OEM system OTA detection still compares the last confirmed
+// successful build identity; vendor update signals are detection-only.
+const ONBOARDING_NOTICE_REVISION = 'r7';
 const ONBOARDING_COUNTDOWN_SECONDS = 8;
 const REPO_URL = 'https://github.com/jiayuxuan123/RescueX';
 const RELEASES_URL = `${REPO_URL}/releases`;
@@ -73,6 +73,23 @@ const I18N = {
         ota_mode: 'OTA 模式',
         watchdog: '看门狗',
         rescue_count: '救砖次数',
+        system_timezone: '系统时区',
+        webui_preference: 'WebUI 更新偏好',
+        webui_preference_pending: '等待首次确认',
+        webui_preference_install: '以后自动安装',
+        webui_preference_skip: '以后自动跳过',
+        webui_preference_deferred: '暂不决定',
+        webui_preference_title: '保存 WebUI 安装偏好',
+        webui_preference_desc_install: '本次安装选择了 WebUI。以后更新模块时是否自动保留 WebUI，不再要求按音量键？',
+        webui_preference_desc_skip: '本次更新保留了已有 WebUI。以后更新模块时是否自动跳过 WebUI？',
+        webui_preference_install_action: '以后自动安装 WebUI',
+        webui_preference_skip_action: '以后自动跳过 WebUI',
+        webui_preference_defer_action: '暂不决定',
+        webui_preference_saved_install: '已保存：以后自动安装 WebUI',
+        webui_preference_saved_skip: '已保存：以后自动跳过 WebUI',
+        webui_preference_deferred_toast: '本次不保存，下一次更新时仍会询问',
+        webui_preference_save_failed: 'WebUI 安装偏好保存失败',
+        webui_preference_unsupported: '当前版本无法读取 WebUI 安装偏好',
         fail_progress: '失败进度',
         config: '救砖参数',
         reboot_threshold: '连续重启阈值',
@@ -89,6 +106,8 @@ const I18N = {
         ota_detection_manual_pending: '手动保护待确认',
         ota_detection_source_manual: '手动保护',
         ota_detection_source_build_baseline: '系统构建变化',
+        ota_detection_source_vendor_signal: '厂商更新信号',
+        ota_detection_vendor_reason: '厂商信号原因',
         ota_detection_source_legacy: '兼容更新信号',
         ota_detection_source_none: '未检测',
         ota_manual_guard: '设置/清除 OTA 手动保护',
@@ -145,12 +164,27 @@ const I18N = {
         export: '导出',
         clear: '清空',
         about: '关于',
+        appearance: '外观',
+        appearance_title: '选择 WebUI 外观',
+        appearance_desc: '选择只影响界面样式和页面组织，不会改变救砖逻辑。',
+        appearance_miuix: 'MIUI X 工作区',
+        appearance_miuix_desc: '当前 RescueX 默认界面',
+        appearance_md3: 'Material Design 3',
+        appearance_md3_desc: '分组设置、列表行和 MD3 组件风格',
+        appearance_monet: '莫奈取色（动态配色）',
+        appearance_monet_desc: '读取系统已生成的 Material You 色阶应用到 MD3 主题',
+        appearance_monet_md3_only: '仅在 Material Design 3 主题下可用',
+        appearance_monet_unavailable: '未能读取系统配色，已保持默认色板',
+        appearance_monet_seed_only: '未能读取系统色阶，已改用主题种子色近似',
+        appearance_monet_source_platform: '已启用：使用系统真实 Material You 色阶',
+        appearance_monet_source_seed: '已启用：仅读到主题种子色，为近似配色',
+        appearance_saved: '外观已切换',
         version: '版本',
         manager: '管理器',
         source_code: '源码',
         update_notice: '更新公告',
-        update_notice_title: '系统 OTA 检测与升级可靠性修复',
-        update_notice_desc: 'v3.5.10-r3 新增跨厂商系统 OTA 构建基线检测和一次性手动保护；更新后的首次启动自动使用更长超时，失败重试不会覆盖旧基线。',
+        update_notice_title: '手机端导航与 OTA 识别修复',
+        update_notice_desc: 'v3.5.11 修复手机端底部导航无法切页、厂商 OTA 信号常驻误报，并新增 MIUI X / Material Design 3 外观选择、Monet 动态配色与持久化 WebUI 安装偏好。',
         check_update: '检查更新',
         checking_update: '正在检查更新...',
         update_available: '发现新版本',
@@ -158,7 +192,7 @@ const I18N = {
         update_check_failed: '检查更新失败',
         open_source_repo: '开源仓库',
         view_releases: '版本发布',
-        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.5.10-r3：新增跨厂商系统 OTA 检测、一次性手动保护与升级状态持久化修复。',
+        about_desc: 'RescueX 通过监控启动失败次数和开机超时，自动禁用问题模块以救砖。兼容 Magisk / KernelSU / APatch。v3.5.11 修复手机端导航与 OTA 信号误报，并新增可切换 WebUI 外观。',
         loading: '加载中...',
         // 状态文本
         status_ok: '系统正常',
@@ -408,6 +442,23 @@ const I18N = {
         ota_mode: 'OTA Mode',
         watchdog: 'Watchdog',
         rescue_count: 'Rescue Count',
+        system_timezone: 'System time zone',
+        webui_preference: 'WebUI update preference',
+        webui_preference_pending: 'Awaiting first confirmation',
+        webui_preference_install: 'Install automatically',
+        webui_preference_skip: 'Skip automatically',
+        webui_preference_deferred: 'Not decided',
+        webui_preference_title: 'Save WebUI installation preference',
+        webui_preference_desc_install: 'This install selected WebUI. Should future module updates keep WebUI automatically without asking for a volume key?',
+        webui_preference_desc_skip: 'This update kept the existing WebUI. Should future module updates skip WebUI automatically?',
+        webui_preference_install_action: 'Always install WebUI',
+        webui_preference_skip_action: 'Always skip WebUI',
+        webui_preference_defer_action: 'Decide later',
+        webui_preference_saved_install: 'Saved: WebUI will be installed automatically',
+        webui_preference_saved_skip: 'Saved: WebUI will be skipped automatically',
+        webui_preference_deferred_toast: 'Not saved; the next update will ask again',
+        webui_preference_save_failed: 'Could not save the WebUI installation preference',
+        webui_preference_unsupported: 'This version cannot read the WebUI installation preference',
         fail_progress: 'Fail Progress',
         config: 'Configuration',
         reboot_threshold: 'Reboot Threshold',
@@ -424,6 +475,8 @@ const I18N = {
         ota_detection_manual_pending: 'Manual guard pending confirmation',
         ota_detection_source_manual: 'Manual guard',
         ota_detection_source_build_baseline: 'System build changed',
+        ota_detection_source_vendor_signal: 'Vendor update signal',
+        ota_detection_vendor_reason: 'Vendor signal reason',
         ota_detection_source_legacy: 'Compatibility signal',
         ota_detection_source_none: 'Not detected',
         ota_manual_guard: 'Set/Clear OTA Manual Guard',
@@ -480,20 +533,38 @@ const I18N = {
         export: 'Export',
         clear: 'Clear',
         about: 'About',
+        appearance: 'Appearance',
+        appearance_title: 'Choose WebUI appearance',
+        appearance_desc: 'This changes only the interface style and layout, not rescue behavior.',
+        appearance_miuix: 'MIUI X workspace',
+        appearance_miuix_desc: 'Current RescueX default interface',
+        appearance_md3: 'Material Design 3',
+        appearance_md3_desc: 'Grouped settings, list rows, and MD3 components',
+        appearance_monet: 'Monet dynamic color',
+        appearance_monet_desc: 'Use the Material You tonal palette the system already generated for the MD3 theme',
+        appearance_monet_md3_only: 'Available only with the Material Design 3 theme',
+        appearance_monet_unavailable: 'Could not read a system palette; keeping the default colors',
+        appearance_monet_seed_only: 'Could not read the system tonal palette; using a seed-color approximation',
+        appearance_monet_source_platform: 'On: using the real system Material You palette',
+        appearance_monet_source_seed: 'On: only a theme seed color was readable, so colors are approximated',
+        appearance_saved: 'Appearance changed',
         version: 'Version',
         manager: 'Manager',
         source_code: 'Source',
         update_notice: 'Update Notice',
-        update_notice_title: 'System OTA detection and upgrade reliability fixes',
-        update_notice_desc: 'v3.5.10-r3 adds a cross-OEM system-build baseline and one-shot manual guard. The first boot after an update uses the longer timeout, and failed retries retain the prior baseline.',
+        update_notice_title: 'Mobile navigation and OTA detection fixes',
+        update_notice_desc: 'v3.5.11 fixes mobile bottom-navigation switching and a persistent vendor OTA false positive, and adds MIUI X / Material Design 3 appearance selection, Monet dynamic color, and a persisted WebUI install preference.',
         check_update: 'Check Updates',
         checking_update: 'Checking updates...',
         update_available: 'Update available',
         update_up_to_date: 'Already on the latest version',
         update_check_failed: 'Update check failed',
         open_source_repo: 'Open Repository',
+        open_external_browser: 'Opened in the system browser',
+        open_external_copied: 'Could not open a browser; link copied',
+        open_external_failed: 'Could not open the link',
         view_releases: 'View Releases',
-        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.5.10-r3 adds cross-OEM system OTA detection, a one-shot manual guard, and upgrade-state persistence fixes.',
+        about_desc: 'RescueX monitors boot failures and auto-disables problematic modules to break bootloops. Compatible with Magisk / KernelSU / APatch. v3.5.11 fixes mobile navigation and OTA signal false positives, and adds switchable WebUI appearances.',
         loading: 'Loading...',
         status_ok: 'OPERATIONAL',
         status_ok_meta: 'Last boot succeeded',
@@ -710,6 +781,17 @@ class RescueXUI {
         this.currentTab = 'log';
         this.isLoading = false;
         this.lang = localStorage.getItem('rescuex_lang') || 'zh';
+        this.systemTimezone = 'UTC';
+        this.uiTheme = (() => {
+            try { return localStorage.getItem('rescuex_ui_theme') === 'md3' ? 'md3' : 'miuix'; } catch (_) { return 'miuix'; }
+        })();
+        this.monetEnabled = (() => {
+            try { return localStorage.getItem('rescuex_ui_monet') === 'on'; } catch (_) { return false; }
+        })();
+        this.monetPalette = null;
+        this.monetSource = '';
+        this._syncAppearanceMonetRow = null;
+        this.webuiPreferenceChecked = false;
         this.modulesCache = []; // 模块列表缓存
         this.firstRun = 0;      // v2.5: 首次运行标记（0=已确认，1=首次安装，2=从旧版升级）
         this.onboardingShown = false;
@@ -755,7 +837,7 @@ class RescueXUI {
             'reenableAllModules', 'refreshRescueTransaction', 'restoreRescueTransaction', 'refreshAuditLog', 'refreshLog', 'refreshModules',
             'refreshStats', 'removeCustomDir', 'resetRescueLevel', 'restoreBaseline',
             'restoreSnapshot', 'runIntegrityCheck', 'saveConfig', 'saveCustomDirs', 'saveGoodModules',
-            'saveWhitelist', 'selectAllModules', 'showFeatures', 'showPrivacy',
+            'saveWhitelist', 'selectAllModules', 'showFeatures', 'showPrivacy', 'showAppearance',
             'showUsage', 'takeSnapshot', 'testWatchdog', 'toggleEnabled',
             'togglePatchFlag', 'toggleOtaManualGuard', 'unfreezeApps', 'v35RunSimulation', 'v35RefreshStatus',
             'v35ArmOneShotSafeMode', 'v35CancelOneShotSafeMode', 'v35ExportDiagnostic'
@@ -763,6 +845,9 @@ class RescueXUI {
 
         // 应用初始语言
         this.applyLang(this.lang);
+        this.applyUiTheme(this.uiTheme, false);
+        // Monet needs the bridge, so resolve the seed after paths are known.
+        this.setupMonetSchemeWatcher();
         this.setupWorkspaceShell();
 
         // 事件委托
@@ -820,9 +905,13 @@ class RescueXUI {
 
         await this.resolvePaths();
         await this.loadAll();
+        this.refreshMonet({ force: true });
         this.startAutoRefresh();
         // v2.5: 加载完成后检查是否需要显示引导
         this.checkFirstRun();  // v3.0.1: 非阻塞，不 await
+        // WebUI preference is checked after onboarding so two blocking dialogs
+        // never overlap on first entry.
+        this.scheduleWebUiPreferenceCheck();
     }
 
     setBasePath(basePath) {
@@ -896,6 +985,333 @@ done`;
         }
     }
 
+    // === UI theme ===
+    // v3.5.11: Monet reads the palette the Android framework actually generated,
+    // not an approximation of one seed color. Android 12+ publishes the Material
+    // You tonal palettes as framework color resources, and `cmd overlay lookup`
+    // resolves them for the current user. That needs shell/root privileges,
+    // which this module has, so `monet-palette.sh` reads the same colors the
+    // system UI uses. A single seed color remains only as a labeled fallback.
+    async loadMonetPalette() {
+        const empty = { source: 'none', colors: {}, seed: '', style: '' };
+        try {
+            const result = await this.execStrict(`sh "${this.basePath}/monet-palette.sh" status`, 8000);
+            if (!result.ok) return empty;
+            const parsed = this.parseKV(result.stdout || '');
+            const colors = {};
+            Object.keys(parsed).forEach(key => {
+                const match = key.match(/^MONET_(system_[a-z0-9_]+)$/);
+                if (!match) return;
+                const value = String(parsed[key] || '').trim();
+                if (/^#[0-9a-fA-F]{6}$/.test(value)) colors[match[1]] = value.toLowerCase();
+            });
+            const seedRaw = String(parsed.MONET_SEED || '').trim();
+            const seed = /^#[0-9a-fA-F]{6}$/.test(seedRaw) ? seedRaw.toLowerCase() : '';
+            let source = 'none';
+            if (parsed.MONET_SOURCE === 'platform_palette' && Object.keys(colors).length >= 12) {
+                source = 'platform_palette';
+            } else if (seed) {
+                source = 'seed_approx';
+            }
+            return { source, colors, seed, style: String(parsed.MONET_STYLE || '').trim() };
+        } catch (_) {
+            return empty;
+        }
+    }
+
+    hexToHsl(hex) {
+        const value = String(hex || '').replace('#', '');
+        if (!/^[0-9a-fA-F]{6}$/.test(value)) return null;
+        const r = parseInt(value.slice(0, 2), 16) / 255;
+        const g = parseInt(value.slice(2, 4), 16) / 255;
+        const b = parseInt(value.slice(4, 6), 16) / 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const l = (max + min) / 2;
+        let h = 0;
+        let s = 0;
+        if (max !== min) {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            if (max === r) h = ((g - b) / d + (g < b ? 6 : 0));
+            else if (max === g) h = (b - r) / d + 2;
+            else h = (r - g) / d + 4;
+            h *= 60;
+        }
+        return { h, s: s * 100, l: l * 100 };
+    }
+
+    // Tone values follow the Material tonal-palette convention (0 = black,
+    // 100 = white). Chroma is clamped so a very saturated wallpaper cannot
+    // produce unreadable surfaces. Only used for the seed-only fallback.
+    monetTone(hsl, tone, saturationScale = 1) {
+        const s = Math.max(0, Math.min(100, hsl.s * saturationScale));
+        return `hsl(${hsl.h.toFixed(1)} ${s.toFixed(1)}% ${Math.max(0, Math.min(100, tone)).toFixed(1)}%)`;
+    }
+
+    // Framework resource names map to fixed Material tones, so this mapping is
+    // the standard M3 light/dark role assignment rather than a guess.
+    monetRolesFromPalette(colors, dark) {
+        const pick = (...names) => {
+            for (const name of names) {
+                if (colors[name]) return colors[name];
+            }
+            return '';
+        };
+        const roles = dark ? {
+            bg: pick('system_neutral1_900'),
+            surface: pick('system_neutral1_900'),
+            surfaceStrong: pick('system_neutral1_800'),
+            container: pick('system_neutral1_800'),
+            ink: pick('system_neutral1_100'),
+            muted: pick('system_neutral2_200', 'system_neutral1_500'),
+            border: pick('system_neutral2_700'),
+            primary: pick('system_accent1_200'),
+            primarySoft: pick('system_accent1_700'),
+            onPrimary: pick('system_accent1_800')
+        } : {
+            bg: pick('system_neutral1_10'),
+            surface: pick('system_neutral1_10'),
+            surfaceStrong: pick('system_neutral2_100'),
+            container: pick('system_accent2_100', 'system_neutral2_100'),
+            ink: pick('system_neutral1_900'),
+            muted: pick('system_neutral2_700', 'system_neutral1_500'),
+            border: pick('system_neutral2_200'),
+            primary: pick('system_accent1_600'),
+            primarySoft: pick('system_accent1_100'),
+            onPrimary: pick('system_accent1_0')
+        };
+        return Object.values(roles).every(Boolean) ? roles : null;
+    }
+
+    monetRolesFromSeed(seed, dark) {
+        const hsl = this.hexToHsl(seed);
+        if (!hsl) return null;
+        return dark ? {
+            bg: this.monetTone(hsl, 10, 0.35),
+            surface: this.monetTone(hsl, 15, 0.3),
+            surfaceStrong: this.monetTone(hsl, 22, 0.3),
+            container: this.monetTone(hsl, 20, 0.32),
+            ink: this.monetTone(hsl, 92, 0.18),
+            muted: this.monetTone(hsl, 74, 0.16),
+            border: this.monetTone(hsl, 34, 0.26),
+            primary: this.monetTone(hsl, 80, 0.72),
+            primarySoft: this.monetTone(hsl, 30, 0.5),
+            onPrimary: this.monetTone(hsl, 18, 0.5)
+        } : {
+            bg: this.monetTone(hsl, 98, 0.3),
+            surface: this.monetTone(hsl, 100, 0.2),
+            surfaceStrong: this.monetTone(hsl, 92, 0.3),
+            container: this.monetTone(hsl, 95, 0.32),
+            ink: this.monetTone(hsl, 14, 0.35),
+            muted: this.monetTone(hsl, 40, 0.22),
+            border: this.monetTone(hsl, 80, 0.28),
+            primary: this.monetTone(hsl, 40, 0.85),
+            primarySoft: this.monetTone(hsl, 90, 0.6),
+            onPrimary: this.monetTone(hsl, 100, 0.15)
+        };
+    }
+
+    applyMonetPalette(palette) {
+        const root = document.documentElement;
+        const names = [
+            '--rx-monet-bg', '--rx-monet-surface', '--rx-monet-surface-strong',
+            '--rx-monet-container', '--rx-monet-ink', '--rx-monet-muted',
+            '--rx-monet-border', '--rx-monet-primary', '--rx-monet-primary-soft',
+            '--rx-monet-on-primary'
+        ];
+        const clear = () => {
+            names.forEach(name => root.style.removeProperty(name));
+            root.dataset.uiMonet = 'off';
+            delete root.dataset.uiMonetSource;
+        };
+        if (!palette || palette.source === 'none') { clear(); return ''; }
+        const dark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        let roles = null;
+        let source = '';
+        if (palette.source === 'platform_palette') {
+            roles = this.monetRolesFromPalette(palette.colors || {}, dark);
+            if (roles) source = 'platform_palette';
+        }
+        if (!roles && palette.seed) {
+            roles = this.monetRolesFromSeed(palette.seed, dark);
+            if (roles) source = 'seed_approx';
+        }
+        if (!roles) { clear(); return ''; }
+        const set = (name, value) => root.style.setProperty(name, value);
+        set('--rx-monet-bg', roles.bg);
+        set('--rx-monet-surface', roles.surface);
+        set('--rx-monet-surface-strong', roles.surfaceStrong);
+        set('--rx-monet-container', roles.container);
+        set('--rx-monet-ink', roles.ink);
+        set('--rx-monet-muted', roles.muted);
+        set('--rx-monet-border', roles.border);
+        set('--rx-monet-primary', roles.primary);
+        set('--rx-monet-primary-soft', roles.primarySoft);
+        set('--rx-monet-on-primary', roles.onPrimary);
+        root.dataset.uiMonet = 'on';
+        root.dataset.uiMonetSource = source;
+        return source;
+    }
+
+    async refreshMonet(options = {}) {
+        // Monet only styles the MD3 theme; the classic MIUI X look is left alone.
+        if (!this.monetEnabled || this.uiTheme !== 'md3') {
+            this.applyMonetPalette(null);
+            return '';
+        }
+        if (!this.monetPalette || options.force) {
+            this.monetPalette = await this.loadMonetPalette();
+        }
+        const source = this.applyMonetPalette(this.monetPalette);
+        this.monetSource = source;
+        if (options.notifyFailure) {
+            if (!source) {
+                this.toast(this.t('appearance_monet_unavailable'), 'warn', 3500);
+            } else if (source === 'seed_approx') {
+                this.toast(this.t('appearance_monet_seed_only'), 'warn', 3500);
+            }
+        }
+        if (this._syncAppearanceMonetRow) this._syncAppearanceMonetRow();
+        return source;
+    }
+
+    applyUiTheme(theme, persist = true) {
+        const normalized = theme === 'md3' ? 'md3' : 'miuix';
+        this.uiTheme = normalized;
+        document.documentElement.dataset.uiTheme = normalized;
+        if (persist) {
+            try { localStorage.setItem('rescuex_ui_theme', normalized); } catch (_) {}
+        }
+        this.updateAppearanceToggle();
+        this.refreshMonet();
+    }
+
+    updateAppearanceToggle() {
+        const button = this.qs('#btn-appearance');
+        if (!button) return;
+        button.title = this.t('appearance_title');
+        button.setAttribute('aria-label', this.t('appearance_title'));
+    }
+
+    setMonetEnabled(enabled, persist = true) {
+        this.monetEnabled = !!enabled;
+        if (persist) {
+            try { localStorage.setItem('rescuex_ui_monet', this.monetEnabled ? 'on' : 'off'); } catch (_) {}
+        }
+        return this.refreshMonet({ force: true, notifyFailure: this.monetEnabled });
+    }
+
+    // Light/dark switches change the tonal targets, so recompute instead of
+    // leaving stale inline variables behind.
+    setupMonetSchemeWatcher() {
+        if (!window.matchMedia) return;
+        const query = window.matchMedia('(prefers-color-scheme: dark)');
+        const handler = () => { this.refreshMonet(); };
+        if (typeof query.addEventListener === 'function') query.addEventListener('change', handler);
+        else if (typeof query.addListener === 'function') query.addListener(handler);
+    }
+
+    showAppearance() {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay appearance-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'modal appearance-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        const title = document.createElement('h3');
+        title.textContent = this.t('appearance_title');
+        const desc = document.createElement('p');
+        desc.textContent = this.t('appearance_desc');
+        const options = document.createElement('div');
+        options.className = 'appearance-options';
+        const makeOption = (theme, titleKey, descKey) => {
+            const option = document.createElement('button');
+            option.type = 'button';
+            option.className = 'appearance-option';
+            option.dataset.theme = theme;
+            option.setAttribute('aria-pressed', String(this.uiTheme === theme));
+            const label = document.createElement('strong');
+            label.textContent = this.t(titleKey);
+            const detail = document.createElement('span');
+            detail.textContent = this.t(descKey);
+            option.append(label, detail);
+            option.addEventListener('click', () => {
+                this.applyUiTheme(theme);
+                options.querySelectorAll('.appearance-option').forEach(node => {
+                    node.setAttribute('aria-pressed', String(node.dataset.theme === theme));
+                });
+                if (this._syncAppearanceMonetRow) this._syncAppearanceMonetRow();
+                this.toast(this.t('appearance_saved'), 'success');
+            });
+            return option;
+        };
+        options.append(
+            makeOption('miuix', 'appearance_miuix', 'appearance_miuix_desc'),
+            makeOption('md3', 'appearance_md3', 'appearance_md3_desc')
+        );
+
+        // Monet is an MD3-only option, so keep it visually attached to the
+        // theme list instead of hiding it in a separate settings page.
+        const monetRow = document.createElement('label');
+        monetRow.className = 'appearance-monet';
+        const monetInput = document.createElement('input');
+        monetInput.type = 'checkbox';
+        monetInput.checked = !!this.monetEnabled;
+        const monetCopy = document.createElement('span');
+        const monetTitle = document.createElement('strong');
+        monetTitle.textContent = this.t('appearance_monet');
+        const monetDesc = document.createElement('span');
+        monetDesc.textContent = this.t('appearance_monet_desc');
+        monetCopy.append(monetTitle, monetDesc);
+        monetRow.append(monetInput, monetCopy);
+        const syncMonetRow = () => {
+            const available = this.uiTheme === 'md3';
+            monetInput.disabled = !available;
+            monetRow.classList.toggle('is-disabled', !available);
+            if (!available) {
+                monetDesc.textContent = this.t('appearance_monet_md3_only');
+                return;
+            }
+            if (this.monetEnabled && this.monetSource === 'platform_palette') {
+                monetDesc.textContent = this.t('appearance_monet_source_platform');
+            } else if (this.monetEnabled && this.monetSource === 'seed_approx') {
+                monetDesc.textContent = this.t('appearance_monet_source_seed');
+            } else {
+                monetDesc.textContent = this.t('appearance_monet_desc');
+            }
+        };
+        monetInput.addEventListener('change', async () => {
+            const source = await this.setMonetEnabled(monetInput.checked);
+            if (monetInput.checked && !source) monetInput.checked = false;
+            syncMonetRow();
+            this.toast(this.t('appearance_saved'), 'success');
+        });
+        syncMonetRow();
+        this._syncAppearanceMonetRow = syncMonetRow;
+        const actions = document.createElement('div');
+        actions.className = 'modal-buttons';
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'btn btn-text';
+        close.textContent = this.t('doc_close');
+        close.addEventListener('click', () => {
+            this._syncAppearanceMonetRow = null;
+            overlay.remove();
+        });
+        actions.appendChild(close);
+        modal.append(title, desc, options, monetRow, actions);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        close.focus();
+        overlay.addEventListener('click', event => {
+            if (event.target === overlay) {
+                this._syncAppearanceMonetRow = null;
+                overlay.remove();
+            }
+        });
+    }
+
     // === i18n ===
     t(key) {
         return (I18N[this.lang] && I18N[this.lang][key]) || key;
@@ -919,6 +1335,8 @@ done`;
         this.setDefaultSubtitle();
         const refreshButton = this.qs('.workspace-menu-btn');
         if (refreshButton) { refreshButton.title = this.t('workspace_refresh'); refreshButton.setAttribute('aria-label', this.t('workspace_refresh')); }
+        const appearanceButton = this.qs('#btn-appearance');
+        if (appearanceButton) this.updateAppearanceToggle();
     }
 
     async switchLang(lang) {
@@ -963,30 +1381,77 @@ done`;
         const el = this.qs('#app-subtitle');
         if (!el) return;
         el.classList.remove('easter-note');
-            el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.10-r3' : 'Automatic Boot Rescue v3.5.10-r3';
+        el.textContent = this.lang === 'zh' ? '自动救砖守护 v3.5.11' : 'Automatic Boot Rescue v3.5.11';
     }
 
-    openExternal(url) {
+    // v3.5.11: openExternal previously called a copyText() helper that never
+    // existed, so the last-resort branch threw instead of giving the user the
+    // URL. Provide a real clipboard fallback with a shell-side backup.
+    async copyText(text) {
+        const value = String(text || '');
+        if (!value) return false;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(value);
+                return true;
+            }
+        } catch (_) {}
+        try {
+            const helper = document.createElement('textarea');
+            helper.value = value;
+            helper.setAttribute('readonly', 'readonly');
+            helper.style.cssText = 'position:fixed;top:-1000px;left:-1000px;opacity:0;';
+            document.body.appendChild(helper);
+            helper.select();
+            const ok = document.execCommand && document.execCommand('copy');
+            helper.remove();
+            if (ok) return true;
+        } catch (_) {}
+        return false;
+    }
+
+    // v3.5.11: Root-manager WebUI containers render pages inside their own
+    // WebView. window.open keeps GitHub inside that container, where downloads
+    // and sign-in usually fail. Hand the URL to the system browser instead and
+    // only fall back to in-container navigation when no Activity can be started.
+    async openExternal(url) {
         if (!url) return;
+        const safe = String(url);
+        if (!/^https?:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]*$/.test(safe)) {
+            this.toast(this.t('open_external_failed'), 'error');
+            return;
+        }
+        const quoted = `'${safe.replace(/'/g, "'\\''")}'`;
+        try {
+            const result = await this.execStrict(
+                `am start -a android.intent.action.VIEW -d ${quoted} >/dev/null 2>&1 && echo OK`,
+                8000
+            );
+            if (result.ok && result.stdout.includes('OK')) {
+                this.toast(this.t('open_external_browser'), 'success', 2500);
+                return;
+            }
+        } catch (_) {}
         try {
             if (typeof window.open === 'function') {
-                const win = window.open(url, '_blank');
+                const win = window.open(safe, '_blank');
                 if (win) return;
             }
         } catch (_) {}
         try {
-            window.location.href = url;
+            window.location.href = safe;
         } catch (_) {
-            this.copyText(url);
+            const copied = await this.copyText(safe);
+            this.toast(this.t(copied ? 'open_external_copied' : 'open_external_failed'), 'warn', 4000);
         }
     }
 
     openRepository() {
-        this.openExternal(REPO_URL);
+        return this.openExternal(REPO_URL);
     }
 
     openReleases() {
-        this.openExternal(RELEASES_URL);
+        return this.openExternal(RELEASES_URL);
     }
 
     async checkUpdate() {
@@ -1370,6 +1835,14 @@ done`;
         const primary = detected
             ? `${this.t('ota_detection_active')} (${source})`
             : (baselineReady ? this.t('ota_detection_ready') : this.t('ota_detection_missing'));
+        const vendorReason = snapshot.OTA_VENDOR_REASON || '';
+        if (vendorReason && vendorReason !== 'none') {
+            stateEl.title = `${this.t('ota_detection_vendor_reason')}: ${vendorReason}`;
+            stateEl.setAttribute('aria-label', `${primary}. ${this.t('ota_detection_vendor_reason')}: ${vendorReason}`);
+        } else {
+            stateEl.removeAttribute('title');
+            stateEl.removeAttribute('aria-label');
+        }
         stateEl.textContent = manualPending && !detected
             ? `${primary} · ${this.t('ota_detection_manual_pending')}`
             : primary;
@@ -1505,6 +1978,10 @@ get_dashboard_snapshot`;
             heroMeta.textContent = this.t(m.meta);
 
             this.setText('#info-last-result', result);
+            const timezone = extra.OTA_TIMEZONE || 'UTC';
+            this.systemTimezone = timezone;
+            this.setText('#info-timezone', timezone);
+            this.updateWebUiPreferenceTile(extra);
             const failCount = parseInt(s.FAIL_COUNT) || 0;
             this.setText('#info-fail-count', failCount);
             const otaDetected = s.OTA_DETECTED === 'true' || extra.OTA_DETECTION_ACTIVE === 'true';
@@ -2659,6 +3136,126 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         }
     }
 
+    // === WebUI 安装偏好 ===
+    scheduleWebUiPreferenceCheck(attempt = 0) {
+        if (this.webuiPreferenceChecked) return;
+        // The onboarding dialog is also modal. Wait for it to close before
+        // asking about the installer preference.
+        if (this.qs('.onboarding-overlay')) {
+            if (attempt < 120) {
+                setTimeout(() => this.scheduleWebUiPreferenceCheck(attempt + 1), 1000);
+            }
+            return;
+        }
+        this.checkWebUiPreference();
+    }
+
+    webUiPreferenceLabel(state, choice) {
+        if (state === 'CONFIRMED' && choice === 'install') return this.t('webui_preference_install');
+        if (state === 'CONFIRMED' && choice === 'skip') return this.t('webui_preference_skip');
+        if (state === 'PENDING') return this.t('webui_preference_pending');
+        if (state === 'DEFERRED') return this.t('webui_preference_deferred');
+        return '--';
+    }
+
+    async checkWebUiPreference() {
+        if (this.webuiPreferenceChecked) return;
+        this.webuiPreferenceChecked = true;
+        try {
+            const script = `. "${this.basePath}/webui-choice.sh" 2>/dev/null && rx_webui_choice_status`;
+            const result = await this.execStrict(script, 5000);
+            if (!result.ok) return;
+            const snapshot = this.parseKV(result.stdout || '');
+            const state = snapshot.WEBUI_PREF_STATE || 'NONE';
+            const choice = snapshot.WEBUI_PREF_CHOICE || 'install';
+            this.updateWebUiPreferenceTile(snapshot);
+            if (state !== 'PENDING' || (choice !== 'install' && choice !== 'skip')) return;
+            const selected = await this.showWebUiPreferenceDialog(choice);
+            if (!selected) return;
+            const command = selected === 'defer'
+                ? `rx_webui_choice_write_deferred ${choice} ui-defer`
+                : `rx_webui_choice_write_confirmed ${selected} ui`;
+            const saved = await this.execStrict(`. "${this.basePath}/webui-choice.sh" 2>/dev/null && ${command}`, 5000);
+            if (!saved.ok) {
+                this.toast(this.t('webui_preference_save_failed'), 'error');
+                return;
+            }
+            const nextState = selected === 'defer' ? 'DEFERRED' : 'CONFIRMED';
+            const nextChoice = selected === 'defer' ? choice : selected;
+            this.updateWebUiPreferenceTile({ WEBUI_PREF_STATE: nextState, WEBUI_PREF_CHOICE: nextChoice });
+            this.toast(this.t(selected === 'install'
+                ? 'webui_preference_saved_install'
+                : selected === 'skip'
+                    ? 'webui_preference_saved_skip'
+                    : 'webui_preference_deferred_toast'), selected === 'defer' ? 'warn' : 'success', 4500);
+        } catch (_) {
+            // A missing helper on an older/partial installation should not
+            // block the rest of the WebUI.
+        }
+    }
+
+    updateWebUiPreferenceTile(snapshot) {
+        const el = this.qs('#info-webui-preference');
+        if (!el) return;
+        el.textContent = this.webUiPreferenceLabel(snapshot.WEBUI_PREF_STATE, snapshot.WEBUI_PREF_CHOICE);
+    }
+
+    showWebUiPreferenceDialog(choice) {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay webui-preference-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'modal webui-preference-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+
+        const title = document.createElement('h3');
+        title.textContent = this.t('webui_preference_title');
+        const body = document.createElement('p');
+        body.textContent = this.t(choice === 'skip'
+            ? 'webui_preference_desc_skip'
+            : 'webui_preference_desc_install');
+        const buttons = document.createElement('div');
+        buttons.className = 'modal-buttons webui-preference-buttons';
+
+        const makeButton = (labelKey, className, value) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `btn ${className}`;
+            button.textContent = this.t(labelKey);
+            button.dataset.preferenceValue = value;
+            return button;
+        };
+        const installButton = makeButton('webui_preference_install_action', 'btn-filled', 'install');
+        const skipButton = makeButton('webui_preference_skip_action', 'btn-outlined', 'skip');
+        const deferButton = makeButton('webui_preference_defer_action', 'btn-text', 'defer');
+        buttons.append(installButton, skipButton, deferButton);
+        modal.append(title, body, buttons);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        return new Promise(resolve => {
+            let settled = false;
+            const finish = value => {
+                if (settled) return;
+                settled = true;
+                document.removeEventListener('keydown', onKeyDown);
+                overlay.remove();
+                resolve(value);
+            };
+            const onKeyDown = event => {
+                if (event.key === 'Escape') finish('defer');
+            };
+            [installButton, skipButton, deferButton].forEach(button => {
+                button.addEventListener('click', () => finish(button.dataset.preferenceValue));
+            });
+            overlay.addEventListener('click', event => {
+                if (event.target === overlay) finish('defer');
+            });
+            document.addEventListener('keydown', onKeyDown);
+            installButton.focus();
+        });
+    }
+
     // === v2.5: 首次运行引导 ===
     async checkFirstRun() {
         // v3.5.9: acknowledgement is stored in the module state and in the
@@ -2705,7 +3302,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
         logo.textContent = 'R';
         const title = document.createElement('h2');
         title.style.cssText = 'margin:0;font-size:18px;color:var(--rx-ink,#1a1a2e);';
-        title.textContent = isZh ? 'RescueX v3.5.10-r3 更新须知' : 'RescueX v3.5.10-r3 Update Notice';
+        title.textContent = isZh ? 'RescueX v3.5.11 更新须知' : 'RescueX v3.5.11 Update Notice';
         header.appendChild(logo);
         header.appendChild(title);
 
@@ -2725,18 +3322,13 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 '一次性安全模式会立即写入禁用标记，下次启动生效，请确认后再布防。',
                 '覆盖更新后如遇异常，可先卸载模块（会彻底清理状态和持久化目录）再重新安装。',
             ]},
-            { title: 'v3.5.10-r3 OTA 与可靠性修复', items: [
-                '新增：以确认成功启动的系统构建基线识别厂商魔改 OTA 与大版本更新，检测后自动使用 OTA 长超时。',
-                '新增：无法自动识别时可设置一次性 OTA 手动保护，确认启动成功后自动清除。',
-                '关键修复：RescueX 不再移动、回放或重启 Root 管理器的模块更新队列。',
-                '关键修复：BOOT_TOKEN 变化仅作诊断和启动事务归属，不再单独计为失败或触发救砖。',
-                '修复覆盖更新时旧自检守护未停止、运行时元数据变化导致的完整性误报。',
-                '安全修复：一次性安全模式部分恢复失败时保留 journal，不再删除恢复证据。',
-                'Bridge 协议：execStrict 保留退出码/超时/异常，写操作不再因空输出误报成功。',
-                '配置导入原子化：配置和白名单要么同时提交，要么都不提交。',
-                '确认弹窗：默认聚焦取消按钮，危险操作需二次确认。',
-                '新增：配置 Schema 版本化、自适应启动超时、深色模式、诊断包多格式回退。',
-                '新增：可选原生看门狗（arm64），Shell 回退始终可用。',
+            { title: 'v3.5.11 手机端导航与 OTA 识别修复', items: [
+                '修复手机端底部导航无法切页：之前缺少分组隐藏样式，所有卡片堆在同一页。',
+                '修复 OTA 长期误报：不再把常驻的厂商属性、update_engine 进程和旧状态文件当作正在更新。',
+                'WebUI 安装偏好会在确认后沿用，升级不再每次依赖音量键；旧 WebUI 不会因误按音量下被删除。',
+                '新增 MIUI X 与 Material Design 3 外观选择；可选 Monet 动态配色仅作用于 MD3。',
+                '已删除与救砖无关的 ColorOS 功能扩展，只保留影响开机超时判断的厂商 OTA 识别。',
+                'OTA 识别仍然只影响超时选择，不改失败计数、看门狗、模块禁用/恢复和重启行为。',
             ]},
             { title: '⚠️ 重要提醒', items: [
                 '本模块具有 Root 权限，请仅从官方 GitHub Release 下载。',
@@ -2755,19 +3347,13 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 'One-shot safe mode writes disable markers immediately, effective on next boot. Confirm before arming.',
                 'If issues occur after an update, uninstall the module (which fully cleans state and persist dirs) then reinstall.',
             ]},
-            { title: 'v3.5.10-r3 OTA and Reliability Fixes', items: [
-                'New: Cross-OEM OTA detection compares the current system build against the last confirmed successful boot and selects the longer OTA timeout.',
-                'New: A one-shot manual OTA guard is available for unsupported update clients and clears after a confirmed successful boot.',
-                'Critical fix: RescueX no longer moves, replays, or reboots from Root-manager module update queues.',
-                'Critical fix: BOOT_TOKEN changes are diagnostics and boot-transaction ownership only; they no longer count as a standalone rescue failure.',
-                'Fixed: Update-time integrity false positives caused by an old daemon and runtime metadata changes.',
-                'Fixed: Full rescue must verify disable markers are actually written before committing success.',
-                'Fixed: One-shot safe mode retains journal on partial restore failure.',
-                'Bridge: execStrict preserves exit code/timeout/exception; writes no longer report false success.',
-                'Config import is now atomic (temp + rename).',
-                'Confirm dialogs default to Cancel; dangerous operations require double confirmation.',
-                'New: Config schema versioning, adaptive boot timeout, dark mode, multi-format diagnostic export.',
-                'New: Optional native watchdog (arm64) with Shell fallback.',
+            { title: 'v3.5.11 Mobile navigation and OTA detection fixes', items: [
+                'Fixed mobile bottom-navigation switching: the group-hiding style was missing, so every card stacked onto one page.',
+                'Fixed a persistent OTA false positive: always-present vendor properties, a running update_engine, and stale status files no longer count as an active update.',
+                'A confirmed WebUI install preference survives upgrades, so updates no longer rely on volume keys; an accidental volume-down press cannot delete an existing WebUI.',
+                'MIUI X and Material Design 3 are selectable appearances. Optional Monet dynamic color is scoped to MD3.',
+                'Removed the ColorOS feature extension, which was unrelated to rescue. Only vendor OTA detection that affects boot timeout remains.',
+                'OTA detection still only selects a timeout; it does not change failure counts, the watchdog, module disable/restore, or reboot behavior.',
             ]},
             { title: '⚠️ Important', items: [
                 'This module has Root access. Only download from the official GitHub Release.',
@@ -2874,7 +3460,7 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
             try { localStorage.setItem('rescuex_onboarding_notice_ack', contentHash); } catch (_) {}
             if (timer) { clearInterval(timer); timer = null; }
             overlay.remove();
-            this.toast(isZh ? '欢迎使用 RescueX v3.5.10-r3' : 'Welcome to RescueX v3.5.10-r3', 'success');
+            this.toast(isZh ? '欢迎使用 RescueX v3.5.11' : 'Welcome to RescueX v3.5.11', 'success');
         };
 
         updateButton();
@@ -3266,7 +3852,16 @@ manual_generate_rescue_decision_report`, EXEC_REPORT_TIMEOUT_MS);
                 const match = line.match(/^\[(\d+)\]\s*(.*)/);
                 if (match && /^\d{10}$/.test(match[1])) {
                     const d = new Date(parseInt(match[1]) * 1000);
-                    const timeStr = d.toLocaleString(this.lang === 'zh' ? 'zh-CN' : 'en-US');
+                    let timeStr;
+                    try {
+                        timeStr = d.toLocaleString(this.lang === 'zh' ? 'zh-CN' : 'en-US', {
+                            timeZone: this.systemTimezone || undefined
+                        });
+                    } catch (_) {
+                        // Invalid/unknown Android timezone values must not break
+                        // the whole audit view; fall back to WebView local time.
+                        timeStr = d.toLocaleString(this.lang === 'zh' ? 'zh-CN' : 'en-US');
+                    }
                     return `[${timeStr}] ${match[2]}`;
                 }
                 return line;

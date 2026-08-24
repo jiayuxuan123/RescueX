@@ -61,8 +61,9 @@ setup_case() {
     STATE_DIR="$TEST_ROOT/state"
     PERSIST_DIR="$TEST_ROOT/persist"
     PROPS_FILE="$TEST_ROOT/props"
-    mkdir -p "$STATE_DIR" "$PERSIST_DIR"
-    export STATE_DIR PERSIST_DIR PROPS_FILE
+    OTA_PROBE_ROOT="$TEST_ROOT/fs"
+    mkdir -p "$STATE_DIR" "$PERSIST_DIR" "$OTA_PROBE_ROOT"
+    export STATE_DIR PERSIST_DIR PROPS_FILE OTA_PROBE_ROOT
 
     getprop() {
         awk -F= -v wanted="$1" '
@@ -82,6 +83,7 @@ setup_case() {
 
 teardown_case() {
     rm -rf "$TEST_ROOT"
+    unset OTA_PROBE_ROOT
 }
 
 case_missing_baseline() {
@@ -163,6 +165,73 @@ case_dashboard_status() {
     teardown_case
 }
 
+case_vendor_property_signal() {
+    setup_case || return 1
+    write_props 'vendor/device/product:15/AP4A/100:user/release-keys' '100' '2026-08-01' '_a'
+    printf 'sys.oplus.ota.state=installing\n' >> "$PROPS_FILE"
+    assert_true ota_commit_build_baseline || return 1
+    assert_true detect_ota || return 1
+    assert_eq 'vendor_signal' "$OTA_DETECTION_SOURCE" 'vendor property source' || return 1
+    assert_eq 'property_sys.oplus.ota.state' "$OTA_DETECTION_REASON" 'vendor property reason' || return 1
+    assert_eq 'true' "$OTA_VENDOR_SIGNAL" 'vendor property signal' || return 1
+    teardown_case
+}
+
+case_vendor_status_file_signal() {
+    setup_case || return 1
+    write_props 'vendor/device/product:15/AP4A/100:user/release-keys' '100' '2026-08-01' '_a'
+    mkdir -p "$OTA_PROBE_ROOT/data/oplus/ota"
+    printf 'downloading\n' > "$OTA_PROBE_ROOT/data/oplus/ota/update_status"
+    assert_true ota_commit_build_baseline || return 1
+    assert_true detect_ota || return 1
+    assert_eq 'vendor_signal' "$OTA_DETECTION_SOURCE" 'vendor status source' || return 1
+    assert_eq 'status_file_update_status' "$OTA_DETECTION_REASON" 'vendor status reason' || return 1
+    teardown_case
+}
+
+case_vendor_idle_status_is_ignored() {
+    setup_case || return 1
+    write_props 'vendor/device/product:15/AP4A/100:user/release-keys' '100' '2026-08-01' '_a'
+    mkdir -p "$OTA_PROBE_ROOT/data/oplus/ota"
+    printf 'idle\n' > "$OTA_PROBE_ROOT/data/oplus/ota/update_status"
+    assert_true ota_commit_build_baseline || return 1
+    assert_false detect_ota || return 1
+    assert_eq 'none' "$OTA_DETECTION_SOURCE" 'idle vendor status source' || return 1
+    teardown_case
+}
+
+# Regression for the reported bug: a normally installed module reported an
+# active vendor OTA on every boot. Persistent state must never be a signal.
+case_stale_vendor_signals_are_ignored() {
+    setup_case || return 1
+    write_props 'vendor/device/product:15/AP4A/100:user/release-keys' '100' '2026-08-01' '_a'
+    printf 'ro.oplus.ota.state=updating\n' >> "$PROPS_FILE"
+    printf 'persist.sys.oplus.ota.state=installing\n' >> "$PROPS_FILE"
+    printf 'persist.sys.recovery_update=true\n' >> "$PROPS_FILE"
+    mkdir -p "$OTA_PROBE_ROOT/data/oplus/ota" "$OTA_PROBE_ROOT/data/oplus/ota_package"
+    printf 'downloading\n' > "$OTA_PROBE_ROOT/data/oplus/ota/update_status"
+    touch -t 202001010000 "$OTA_PROBE_ROOT/data/oplus/ota/update_status" 2>/dev/null
+    assert_true ota_commit_build_baseline || return 1
+    assert_false detect_ota || return 1
+    assert_eq 'none' "$OTA_DETECTION_SOURCE" 'stale vendor source' || return 1
+    assert_eq 'false' "$OTA_VENDOR_SIGNAL" 'stale vendor signal' || return 1
+    teardown_case
+}
+
+case_vendor_dashboard_fields() {
+    setup_case || return 1
+    write_props 'vendor/device/product:15/AP4A/100:user/release-keys' '100' '2026-08-01' '_a'
+    printf 'sys.oplus.ota.state=verifying\n' >> "$PROPS_FILE"
+    assert_true ota_commit_build_baseline || return 1
+    assert_true detect_ota || return 1
+    assert_true ota_record_detection_status true || return 1
+    snapshot=$(ota_dashboard_status)
+    assert_contains "$snapshot" 'OTA_DETECTION_SOURCE=vendor_signal' 'vendor dashboard source' || return 1
+    assert_contains "$snapshot" 'OTA_VENDOR_SIGNAL=true' 'vendor dashboard signal' || return 1
+    assert_contains "$snapshot" 'OTA_VENDOR_REASON=property_sys.oplus.ota.state' 'vendor dashboard reason' || return 1
+    teardown_case
+}
+
 case_legacy_fallback() {
     setup_case || return 1
     write_props 'vendor/device/product:15/AP4A/100:user/release-keys' '100' '2026-08-01' '_a'
@@ -197,7 +266,17 @@ case_ui_and_cli_regressions() {
     grep -q "DRY_RUN: 'true'" "$PROJECT_DIR/webroot/script.js" || fail 'WebUI fallback is not DRY_RUN safe' || return 1
     grep -q 'toggleOtaManualGuard' "$PROJECT_DIR/webroot/script.js" || fail 'WebUI OTA manual guard missing' || return 1
     grep -q 'run_cli_command "${2:-help}" "${3:-}" "${4:-}"' "$PROJECT_DIR/action.sh" || fail 'CLI does not forward --apply argument' || return 1
-    grep -q 'common.sh ota-detection.sh' "$PROJECT_DIR/v351-safety.sh" || fail 'OTA detector missing from integrity coverage' || return 1
+    grep -q 'common.sh ota-detection.sh webui-choice.sh monet-palette.sh v351-safety.sh' "$PROJECT_DIR/v351-safety.sh" || fail 'OTA detector/helper missing from integrity coverage' || return 1
+    grep -q '\.workspace-hidden' "$PROJECT_DIR/webroot/workspace-v2.css" || fail 'workspace view switching style missing' || return 1
+    if [ -e "$PROJECT_DIR/coloros-compat.sh" ]; then
+        fail 'ColorOS feature extension must be removed' || return 1
+    fi
+    if grep -qi 'coloros-compat' "$PROJECT_DIR/service.sh" "$PROJECT_DIR/customize.sh" "$PROJECT_DIR/v351-safety.sh"; then
+        fail 'ColorOS extension references remain in module scripts' || return 1
+    fi
+    if grep -q 'update_engine_running' "$PROJECT_DIR/ota-detection.sh"; then
+        fail 'a running update_engine must not count as an OTA signal' || return 1
+    fi
 }
 
 run_case() {
@@ -219,6 +298,11 @@ run_case 'incremental and patch changes are detected' case_incremental_and_patch
 run_case 'A/B slot change is detected' case_slot_change
 run_case 'manual one-shot guard is detected and cleared' case_manual_guard
 run_case 'dashboard reports OTA detection state' case_dashboard_status
+run_case 'vendor property signal is detected' case_vendor_property_signal
+run_case 'vendor status file signal is detected' case_vendor_status_file_signal
+run_case 'idle vendor status is ignored' case_vendor_idle_status_is_ignored
+run_case 'stale and persistent vendor signals are ignored' case_stale_vendor_signals_are_ignored
+run_case 'vendor fields are exposed in dashboard status' case_vendor_dashboard_fields
 run_case 'legacy signals remain a fallback' case_legacy_fallback
 run_case 'corrupt baseline fails closed' case_corrupt_baseline
 run_case 'baseline advances only after SUCCESS integration point' case_success_commit_order
